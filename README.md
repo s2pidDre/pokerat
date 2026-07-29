@@ -4,7 +4,7 @@ Pokerat is a lightweight poker-table companion for private games with friends. I
 
 ## Current build
 
-This version is browser-based and stores data in the current browser using `localStorage`. It does not yet include a shared database or cross-device synchronisation. Publish it only for interface testing until the database and server-side permissions are added.
+This version is browser-based and stores data in the current browser using `localStorage`. It does not yet include a shared Supabase database or cross-device realtime synchronisation.
 
 ## Run locally
 
@@ -15,32 +15,39 @@ This version is browser-based and stores data in the current browser using `loca
 
 No package installation is required to run the app.
 
-## First setup
-
-On a fresh browser, Pokerat asks you to create the first administrator account:
-
-- Choose an administrator name.
-- Create a six-digit PIN.
-- Confirm the PIN.
-
-The first administrator can approve new registrations, reset PINs, suspend accounts, manage reports, clear activity, and perform a hard reset.
-
 ## Account flow
 
-- New players register using a unique player name and six-digit PIN.
+- Registration uses **username, email, password, and confirm password**.
+- Login accepts **username or email** plus password.
+- Usernames contain 3–20 letters, numbers, or underscores.
+- Passwords contain 8–64 characters.
 - New accounts remain **Waiting** until an administrator approves them.
-- Administrators receive a centred, one-at-a-time approval queue.
+- The first launch asks the owner to create the first administrator account.
 - **Remember me** keeps an account signed in after the browser closes.
-- Without **Remember me**, the login lasts only for the browser session.
-- Administrators can approve, reject, suspend, restore, reset PINs, and delete accounts without table history.
-- PINs are stored as salted SHA-256 hashes rather than readable values.
+- Administrators can approve, reject, suspend, restore, reset passwords, and delete accounts without table history.
+- Passwords are stored locally as salted hashes in this prototype, not as readable text.
+
+Existing local PIN-based accounts are migrated. After logging in once with the old PIN, the user must add an email address and create a new password.
+
+## Supabase migration plan
+
+This account layout matches Supabase email/password authentication much more closely:
+
+- Supabase Auth will own the real email/password account.
+- The Pokerat `profiles` table will store the unique username, display name, approval status, and administrator flag.
+- Email login can use Supabase directly.
+- Username login will be resolved securely through a server-side function before sign-in; the public browser must not expose a username-to-email directory.
+- Account approval remains a separate Pokerat profile status after authentication.
+- Realtime database subscriptions will later replace local browser-only notifications.
+
+The current package is **Supabase-ready in interface and data shape**, but it is not connected to Supabase yet.
 
 ## Main features
 
 - Create or join a private table using a table code.
 - Start, cancel, and finish sessions.
 - Live session timer with saved duration in History.
-- Cash-in and cash-out request queues shown one at a time to the table creator.
+- Cash-in and cash-out request queues shown one at a time.
 - Automatic table-money updates after approvals.
 - Final review before finishing a table.
 - Final player result pop-ups.
@@ -51,16 +58,12 @@ The first administrator can approve new registrations, reset PINs, suspend accou
 
 ## Tests
 
-Run the included tests with Node.js:
+Run:
 
 ```bash
 npm test
 ```
 
-## GitHub Pages
-
-The app uses hash-based routes, so it can be hosted as a static site. In the repository settings, open **Pages**, choose **Deploy from a branch**, then select the branch and root folder containing `index.html`.
-
 ## Important limitation
 
-All users and table activity currently exist only in one browser. Registration approvals and notifications will not synchronise between separate devices until a database and realtime backend are added. Do not use this build as the authoritative record for real-money games.
+All users and table activity currently exist only in one browser. Registration approvals and notifications will not synchronise between separate devices until Supabase and realtime subscriptions are added.

@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'pokerat-app-v1';
 const LEGACY_STORAGE_KEY = 'pokerat-local-prototype-v1';
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 13;
 
 const LEGACY_SEED_USER_IDS = new Set(['u-host', 'u-player', 'u-carlo', 'u-dana', 'u-admin']);
 const LEGACY_SEED_SESSION_IDS = new Set(['s-friday', 's-weekend', 's-sunday', 's-open', 's-closed']);
@@ -8,7 +8,8 @@ const LEGACY_SEED_SESSION_IDS = new Set(['s-friday', 's-weekend', 's-sunday', 's
 const arrayOrEmpty = value => Array.isArray(value) ? value : [];
 const stringOrEmpty = value => typeof value === 'string' ? value : '';
 const numberOrNull = value => value === null || value === undefined || value === '' || !Number.isFinite(Number(value)) ? null : Number(value);
-const normalizeLoginName = value => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+const normalizeLoginName = value => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_').replace(/[^a-z0-9_]/g, '').replace(/_+/g, '_').replace(/^_+|_+$/g, '').slice(0, 20);
+const normalizeEmail = value => String(value || '').trim().toLowerCase();
 
 const notificationTypeFromTitle = title => {
   const value = String(title || '').toLowerCase();
@@ -40,18 +41,22 @@ function normalizeUser(user) {
   const status = ['pending', 'active', 'rejected', 'suspended'].includes(user.account_status)
     ? user.account_status
     : 'active';
-  const pinSalt = stringOrEmpty(user.pin_salt);
-  const pinHash = stringOrEmpty(user.pin_hash);
+  const legacyPinHash = stringOrEmpty(user.pin_hash);
+  const passwordSalt = stringOrEmpty(user.password_salt) || stringOrEmpty(user.pin_salt);
+  const passwordHash = stringOrEmpty(user.password_hash) || legacyPinHash;
+  const passwordFormat = stringOrEmpty(user.password_format) || (legacyPinHash ? 'legacy_pin' : 'password');
 
   return {
     id: user.id,
     display_name: displayName,
     login_name: loginName,
+    email: normalizeEmail(user.email),
     account_status: status,
     is_admin: Boolean(user.is_admin),
-    pin_salt: pinSalt,
-    pin_hash: pinHash,
-    must_change_pin: Boolean(user.must_change_pin || (!pinHash && !user.is_admin)),
+    password_salt: passwordSalt,
+    password_hash: passwordHash,
+    password_format: passwordFormat,
+    must_change_password: Boolean(user.must_change_password || user.must_change_pin || passwordFormat === 'legacy_pin' || !normalizeEmail(user.email) || (!passwordHash && !user.is_admin)),
     approved_at: stringOrEmpty(user.approved_at) || (status === 'active' ? stringOrEmpty(user.created_at) || new Date().toISOString() : null),
     approved_by: stringOrEmpty(user.approved_by) || null,
     rejected_at: stringOrEmpty(user.rejected_at) || null,

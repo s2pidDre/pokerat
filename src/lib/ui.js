@@ -412,6 +412,7 @@ export function showAdminRegistrationApprovalDialog({
   userId,
   playerName,
   loginName,
+  email = '',
   requestedText,
   queuePosition = 1,
   queueTotal = 1
@@ -437,6 +438,7 @@ export function showAdminRegistrationApprovalDialog({
   title.id = 'admin-registration-title';
   appendTextElement(card, 'strong', playerName, 'admin-registration-queue__name');
   appendTextElement(card, 'p', `@${loginName}`, 'admin-registration-queue__username');
+  if (email) appendTextElement(card, 'p', email, 'admin-registration-queue__username');
   appendTextElement(card, 'p', requestedText, 'admin-registration-queue__time');
   appendTextElement(card, 'p', 'Approve this friend so they can log in.', 'host-buyin-queue__instruction');
 

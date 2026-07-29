@@ -57,9 +57,10 @@ export function initialAdminSetupView() {
         <div class="simple-brand"><span class="brand-mark">P</span><div><strong>POKERAT</strong><small>FIRST SETUP</small></div></div>
         <div class="access-copy"><span class="system-tag">OWNER SETUP</span><h1>Create administrator</h1><p>This is the first account. It can approve new players and manage the app.</p></div>
         <form id="initial-admin-form" class="stack auth-form">
-          <label>Admin name<input name="playerName" maxlength="24" required autocomplete="username" placeholder="Your name" autofocus></label>
-          <label>Create 6-digit PIN<input name="pin" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" required autocomplete="new-password" placeholder="••••••"></label>
-          <label>Confirm PIN<input name="confirmPin" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" required autocomplete="new-password" placeholder="••••••"></label>
+          <label>Username<input name="username" minlength="3" maxlength="20" pattern="[A-Za-z0-9_]+" required autocomplete="username" placeholder="pokerboss" autofocus></label>
+          <label>Email<input name="email" type="email" maxlength="254" required autocomplete="email" placeholder="you@example.com"></label>
+          <label>Create password<input name="password" type="password" minlength="8" maxlength="64" required autocomplete="new-password" placeholder="At least 8 characters"></label>
+          <label>Confirm password<input name="confirmPassword" type="password" minlength="8" maxlength="64" required autocomplete="new-password" placeholder="Repeat password"></label>
           ${formError()}
           <button class="button button--primary" type="submit">Create administrator</button>
         </form>
@@ -77,9 +78,10 @@ export function accountAccessView({ mode = 'login' } = {}) {
           ${brand}
           <div class="access-copy"><span class="system-tag">NEW PLAYER</span><h1>Create account</h1><p>An admin must approve it before you can log in.</p></div>
           <form id="register-form" class="stack auth-form">
-            <label>Player name<input name="playerName" maxlength="24" required autocomplete="username" placeholder="Mark" autofocus></label>
-            <label>Create 6-digit PIN<input name="pin" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" required autocomplete="new-password" placeholder="••••••"></label>
-            <label>Confirm PIN<input name="confirmPin" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" required autocomplete="new-password" placeholder="••••••"></label>
+            <label>Username<input name="username" minlength="3" maxlength="20" pattern="[A-Za-z0-9_]+" required autocomplete="username" placeholder="mark_23" autofocus></label>
+            <label>Email<input name="email" type="email" maxlength="254" required autocomplete="email" placeholder="mark@example.com"></label>
+            <label>Create password<input name="password" type="password" minlength="8" maxlength="64" required autocomplete="new-password" placeholder="At least 8 characters"></label>
+            <label>Confirm password<input name="confirmPassword" type="password" minlength="8" maxlength="64" required autocomplete="new-password" placeholder="Repeat password"></label>
             ${formError()}
             <button class="button button--primary" type="submit">Submit for approval</button>
           </form>
@@ -106,15 +108,15 @@ export function accountAccessView({ mode = 'login' } = {}) {
     <main class="access-screen">
       <section class="access-card auth-card system-window">
         ${brand}
-        <div class="access-copy"><span class="system-tag">SYSTEM ONLINE</span><h1>Welcome back</h1><p>Enter your player name and PIN.</p></div>
+        <div class="access-copy"><span class="system-tag">SYSTEM ONLINE</span><h1>Welcome back</h1><p>Enter your username or email and password.</p></div>
         <form id="login-form" class="stack auth-form">
-          <label>Player name<input name="playerName" maxlength="24" required autocomplete="username" placeholder="Player name" autofocus></label>
-          <label>6-digit PIN<input name="pin" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" required autocomplete="current-password" placeholder="••••••"></label>
+          <label>Username or email<input name="identifier" maxlength="254" required autocomplete="username" placeholder="Username or email" autofocus></label>
+          <label>Password<input name="password" type="password" minlength="6" maxlength="64" required autocomplete="current-password" placeholder="Your password"></label>
           <label class="remember-row"><input name="remember" type="checkbox"><span><strong>Remember me</strong><small>Do not use this on a shared device.</small></span></label>
           ${formError()}
           <button class="button button--primary" type="submit">Log in</button>
         </form>
-        <p class="forgot-pin-copy">Forgot your PIN? Ask the admin.</p>
+        <p class="forgot-pin-copy">Forgot your password? Ask the admin.</p>
         <div class="auth-link-row">
           <a href="#/register">Create account</a>
         </div>
@@ -122,17 +124,18 @@ export function accountAccessView({ mode = 'login' } = {}) {
     </main>`;
 }
 
-export function forcePinChangeView(profile) {
+export function forcePasswordChangeView(profile) {
   return `
     <main class="access-screen">
       <section class="access-card auth-card system-window">
-        <div class="simple-brand"><span class="brand-mark">P</span><div><strong>POKERAT</strong><small>PIN RESET</small></div></div>
-        <div class="access-copy"><span class="system-tag">ONE LAST STEP</span><h1>Choose a new PIN</h1><p>${escapeHtml(profile?.display_name || 'Player')}, replace the temporary PIN before continuing.</p></div>
-        <form id="forced-pin-change-form" class="stack auth-form">
-          <label>New 6-digit PIN<input name="pin" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" required autocomplete="new-password" placeholder="••••••" autofocus></label>
-          <label>Confirm PIN<input name="confirmPin" type="password" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" required autocomplete="new-password" placeholder="••••••"></label>
+        <div class="simple-brand"><span class="brand-mark">P</span><div><strong>POKERAT</strong><small>PASSWORD RESET</small></div></div>
+        <div class="access-copy"><span class="system-tag">ONE LAST STEP</span><h1>Update your account</h1><p>${escapeHtml(profile?.display_name || 'Player')}, confirm your email and choose a new password.</p></div>
+        <form id="forced-password-change-form" class="stack auth-form">
+          <label>Email<input name="email" type="email" maxlength="254" required autocomplete="email" value="${escapeHtml(profile?.email || '')}" placeholder="you@example.com"></label>
+          <label>New password<input name="password" type="password" minlength="8" maxlength="64" required autocomplete="new-password" placeholder="At least 8 characters" autofocus></label>
+          <label>Confirm password<input name="confirmPassword" type="password" minlength="8" maxlength="64" required autocomplete="new-password" placeholder="Repeat password"></label>
           ${formError()}
-          <button class="button button--primary" type="submit">Save new PIN</button>
+          <button class="button button--primary" type="submit">Save new password</button>
           <button class="button button--ghost" data-logout type="button">Log out</button>
         </form>
       </section>
@@ -427,7 +430,7 @@ export function historyView({ sessions, profileId }) {
 }
 
 export function profileView(profile, user, sessions = []) {
-  return `${pageHeader('', 'Profile')}<section class="profile-grid"><article class="simple-panel profile-summary"><span class="avatar avatar--large">${initials(profile.display_name)}</span><h2>${escapeHtml(profile.display_name)}</h2><p>${profile.is_admin ? 'Admin' : 'User'}</p><small>@${escapeHtml(profile.login_name || '')}</small></article><article class="simple-panel"><form id="profile-form" class="stack"><label>Display name<input name="displayName" value="${escapeHtml(profile.display_name)}" maxlength="24" required></label>${formError()}<button class="button button--primary" type="submit">Save name</button><button class="button button--secondary" type="button" data-open="change-pin">Change PIN</button><button class="button button--ghost" data-logout type="button">Log out</button></form></article></section>`;
+  return `${pageHeader('', 'Profile')}<section class="profile-grid"><article class="simple-panel profile-summary"><span class="avatar avatar--large">${initials(profile.display_name)}</span><h2>${escapeHtml(profile.display_name)}</h2><p>${profile.is_admin ? 'Admin' : 'User'}</p><small>@${escapeHtml(profile.login_name || '')}<br>${escapeHtml(profile.email || 'No email')}</small></article><article class="simple-panel"><form id="profile-form" class="stack"><label>Display name<input name="displayName" value="${escapeHtml(profile.display_name)}" maxlength="24" required></label><label>Email<input name="email" type="email" maxlength="254" value="${escapeHtml(profile.email || '')}" required autocomplete="email"></label>${formError()}<button class="button button--primary" type="submit">Save name</button><button class="button button--secondary" type="button" data-open="change-password">Change password</button><button class="button button--ghost" data-logout type="button">Log out</button></form></article></section>`;
 }
 
 function auditDetailText(log) {
@@ -441,7 +444,7 @@ function auditDetailText(log) {
 }
 
 function adminUserActions(user, activeAdminId) {
-  if (user.id === activeAdminId) return '<span class="admin-you">You</span><button class="button button--ghost button--small" data-admin-reset-pin="' + user.id + '">Reset PIN</button>';
+  if (user.id === activeAdminId) return '<span class="admin-you">You</span><button class="button button--ghost button--small" data-admin-reset-password="' + user.id + '">Reset password</button>';
   const statusButton = user.account_status === 'suspended'
     ? `<button class="button button--secondary button--small" data-admin-status="active" data-user-id="${user.id}">Restore</button>`
     : user.account_status === 'active'
@@ -449,7 +452,7 @@ function adminUserActions(user, activeAdminId) {
       : user.account_status === 'rejected'
         ? `<button class="button button--secondary button--small" data-admin-registration-approve="${user.id}">Approve</button>`
         : '';
-  return `${statusButton}<button class="button button--ghost button--small" data-admin-reset-pin="${user.id}">Reset PIN</button><button class="button button--danger button--small" data-admin-delete-user="${user.id}">Delete</button>`;
+  return `${statusButton}<button class="button button--ghost button--small" data-admin-reset-password="${user.id}">Reset password</button><button class="button button--danger button--small" data-admin-delete-user="${user.id}">Delete</button>`;
 }
 
 export function adminView(users = [], logs = [], reports = [], activeAdminId = '') {
@@ -460,7 +463,7 @@ export function adminView(users = [], logs = [], reports = [], activeAdminId = '
     ${pageHeader('', 'Admin', 'Approve accounts, review reports and manage app data.')}
     <section class="section-block" id="account-requests">
       <div class="section-heading"><h2>Account requests</h2><span>${pendingUsers.length}</span></div>
-      <div class="request-list">${pendingUsers.length ? pendingUsers.map(user => `<article class="request-card system-window"><div class="request-card__header"><div><h3>${escapeHtml(user.display_name)}</h3><p>@${escapeHtml(user.login_name)} · ${formatRelative(user.created_at)}</p></div><span class="status status--pending">Waiting</span></div><div class="request-actions"><button class="button button--danger" data-admin-registration-reject="${user.id}">Reject</button><button class="button button--primary" data-admin-registration-approve="${user.id}">Approve</button></div></article>`).join('') : '<p class="empty-copy">No accounts waiting.</p>'}</div>
+      <div class="request-list">${pendingUsers.length ? pendingUsers.map(user => `<article class="request-card system-window"><div class="request-card__header"><div><h3>${escapeHtml(user.display_name)}</h3><p>@${escapeHtml(user.login_name)} · ${escapeHtml(user.email || 'No email')} · ${formatRelative(user.created_at)}</p></div><span class="status status--pending">Waiting</span></div><div class="request-actions"><button class="button button--danger" data-admin-registration-reject="${user.id}">Reject</button><button class="button button--primary" data-admin-registration-approve="${user.id}">Approve</button></div></article>`).join('') : '<p class="empty-copy">No accounts waiting.</p>'}</div>
     </section>
     <section class="section-block">
       <div class="section-heading"><h2>Reports</h2><span>${openReports.length}</span></div>
@@ -468,7 +471,7 @@ export function adminView(users = [], logs = [], reports = [], activeAdminId = '
     </section>
     <section class="section-block">
       <div class="section-heading"><h2>Registered users</h2><span>${registeredUsers.length}</span></div>
-      <div class="user-list">${registeredUsers.map(user => `<article class="user-row"><span class="avatar">${initials(user.display_name)}</span><div><strong>${escapeHtml(user.display_name)}</strong><small>@${escapeHtml(user.login_name || '')} · ${accountStatusLabel(user.account_status)}${!user.pin_hash ? ' · PIN reset needed' : user.must_change_pin ? ' · Temporary PIN' : ''}</small></div><div class="user-row__actions">${adminUserActions(user, activeAdminId)}</div></article>`).join('')}</div>
+      <div class="user-list">${registeredUsers.map(user => `<article class="user-row"><span class="avatar">${initials(user.display_name)}</span><div><strong>${escapeHtml(user.display_name)}</strong><small>@${escapeHtml(user.login_name || '')} · ${escapeHtml(user.email || 'No email')} · ${accountStatusLabel(user.account_status)}${!user.password_hash ? ' · Password reset needed' : user.must_change_password ? ' · Temporary password' : ''}</small></div><div class="user-row__actions">${adminUserActions(user, activeAdminId)}</div></article>`).join('')}</div>
     </section>
     <section class="section-block">
       <div class="section-heading"><h2>Data</h2><span>Admin only</span></div>
@@ -496,13 +499,13 @@ export function modalTemplate(type, context = {}) {
     'request-cashout': { title: 'Cash out', body: moneyForm('request-cashout-form', 'How much?', 'Send request') },
     'host-cashin': { title: 'Cash in', body: moneyForm('host-cashin-form', 'Cash-in amount', 'Add cash-in') },
     'host-cashout': { title: 'Cash out', body: moneyForm('host-cashout-form', 'Cash-out amount', 'Save cash-out') },
-    'change-pin': {
-      title: 'Change PIN',
-      body: `<form id="change-pin-form" class="stack"><label>Current PIN<input name="currentPin" type="password" inputmode="numeric" maxlength="6" required autocomplete="current-password" placeholder="••••••"></label><label>New 6-digit PIN<input name="pin" type="password" inputmode="numeric" maxlength="6" required autocomplete="new-password" placeholder="••••••"></label><label>Confirm PIN<input name="confirmPin" type="password" inputmode="numeric" maxlength="6" required autocomplete="new-password" placeholder="••••••"></label>${formError()}<button class="button button--primary" type="submit">Save new PIN</button></form>`
+    'change-password': {
+      title: 'Change password',
+      body: `<form id="change-password-form" class="stack"><label>Current password<input name="currentPassword" type="password" minlength="8" maxlength="64" required autocomplete="current-password" placeholder="Current password"></label><label>New password<input name="password" type="password" minlength="8" maxlength="64" required autocomplete="new-password" placeholder="At least 8 characters"></label><label>Confirm password<input name="confirmPassword" type="password" minlength="8" maxlength="64" required autocomplete="new-password" placeholder="Repeat password"></label>${formError()}<button class="button button--primary" type="submit">Save new password</button></form>`
     },
-    'reset-pin': {
-      title: `Reset ${escapeHtml(context.userName || 'player')} PIN`,
-      body: `<form id="admin-reset-pin-form" class="stack"><input type="hidden" name="userId" value="${escapeHtml(context.userId || '')}"><p class="muted">Set a temporary 6-digit PIN and tell it to the player. They must replace it after logging in.</p><label>Temporary PIN<input name="pin" type="password" inputmode="numeric" maxlength="6" required autocomplete="new-password" placeholder="••••••"></label><label>Confirm PIN<input name="confirmPin" type="password" inputmode="numeric" maxlength="6" required autocomplete="new-password" placeholder="••••••"></label>${formError()}<button class="button button--primary" type="submit">Reset PIN</button></form>`
+    'reset-password': {
+      title: `Reset ${escapeHtml(context.userName || 'player')} password`,
+      body: `<form id="admin-reset-password-form" class="stack"><input type="hidden" name="userId" value="${escapeHtml(context.userId || '')}"><p class="muted">Set a temporary password and tell it to the player. They must replace it after logging in.</p><label>Temporary password<input name="password" type="password" minlength="8" maxlength="64" required autocomplete="new-password" placeholder="At least 8 characters"></label><label>Confirm password<input name="confirmPassword" type="password" minlength="8" maxlength="64" required autocomplete="new-password" placeholder="Repeat password"></label>${formError()}<button class="button button--primary" type="submit">Reset password</button></form>`
     },
     'report-session': {
       title: 'Report table',

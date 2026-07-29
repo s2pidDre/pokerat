@@ -5,7 +5,7 @@ import { clearActivityData, loadAppData, makeId, resetAppData, saveAppData } fro
 import {
   adminView,
   appShell,
-  forcePinChangeView,
+  forcePasswordChangeView,
   historyView,
   initialAdminSetupView,
   leaderboardView,
@@ -22,7 +22,7 @@ import { availableTableFunds, playerSummary, toCents } from './utils/accounting.
 import { durationSecondsBetween, escapeHtml, formatCurrency, formatDuration, formatDurationSeconds } from './utils/format.js';
 import { buildClosedTableLeaderboard } from './utils/leaderboard.js';
 import { validAmount } from './utils/validation.js';
-import { clearAuthSession, clearLoginAttempts, createPinSalt, getAuthSessionUserId, getLoginLock, hashPin, normalizeLoginName, recordFailedLogin, setAuthSession, validatePin, validatePlayerName, verifyPin } from './utils/auth.js';
+import { clearAuthSession, clearLoginAttempts, createPasswordSalt, getAuthSessionUserId, getLoginLock, hashPassword, normalizeEmail, normalizeLoginIdentifier, normalizeUsername, recordFailedLogin, setAuthSession, validateDisplayName, validateEmail, validatePassword, validateUsername, verifyPassword } from './utils/auth.js';
 
 const app = document.getElementById('app');
 let renderQueued = false;
@@ -304,6 +304,7 @@ function syncAdminRegistrationApprovalQueue(user) {
     userId: applicant.id,
     playerName: applicant.display_name,
     loginName: applicant.login_name,
+    email: applicant.email,
     requestedText: new Date(applicant.created_at).toLocaleString(),
     queuePosition: 1,
     queueTotal: pending.length
@@ -447,16 +448,27 @@ function signOut(message = '') {
   if (message) requestAnimationFrame(() => showToast(message));
 }
 
-function userByLoginName(value) {
-  const loginName = normalizeLoginName(value);
-  return getState().users.find(user => normalizeLoginName(user.login_name) === loginName) || null;
+function userByLoginIdentifier(value) {
+  const identifier = normalizeLoginIdentifier(value);
+  if (!identifier) return null;
+  return getState().users.find(user => identifier.includes('@')
+    ? normalizeEmail(user.email) === identifier
+    : normalizeUsername(user.login_name) === identifier) || null;
 }
 
+
 function ensureUniqueLoginName(value, exceptUserId = '') {
-  const loginName = normalizeLoginName(value);
-  const duplicate = getState().users.some(user => user.id !== exceptUserId && normalizeLoginName(user.login_name) === loginName);
-  if (duplicate) throw new Error('That player name is already used.');
+  const loginName = normalizeUsername(value);
+  const duplicate = getState().users.some(user => user.id !== exceptUserId && normalizeUsername(user.login_name) === loginName);
+  if (duplicate) throw new Error('That username is already used.');
   return loginName;
+}
+
+function ensureUniqueEmail(value, exceptUserId = '') {
+  const email = normalizeEmail(value);
+  const duplicate = getState().users.some(user => user.id !== exceptUserId && normalizeEmail(user.email) === email);
+  if (duplicate) throw new Error('That email is already registered.');
+  return email;
 }
 
 function notifyAdminsOfRegistration(applicant) {
@@ -512,8 +524,8 @@ function render() {
     return;
   }
 
-  if (user.must_change_pin) {
-    app.innerHTML = forcePinChangeView(user);
+  if (user.must_change_password) {
+    app.innerHTML = forcePasswordChangeView(user);
     return;
   }
 
@@ -777,28 +789,34 @@ async function handleSubmit(event) {
       if (getState().users.some(user => user.is_admin && user.account_status === 'active')) {
         throw new Error('An administrator already exists.');
       }
-      const displayName = String(data.playerName || '').trim().replace(/\s+/g, ' ');
-      const nameError = validatePlayerName(displayName);
-      if (nameError) throw new Error(nameError);
-      const loginName = ensureUniqueLoginName(displayName);
-      const pin = String(data.pin || '');
-      const confirmPin = String(data.confirmPin || '');
-      const pinError = validatePin(pin);
-      if (pinError) throw new Error(pinError);
-      if (pin !== confirmPin) throw new Error('The PINs do not match.');
+      const username = normalizeUsername(data.username);
+      const usernameError = validateUsername(String(data.username || ''));
+      if (usernameError) throw new Error(usernameError);
+      const loginName = ensureUniqueLoginName(username);
+      const emailError = validateEmail(String(data.email || ''));
+      if (emailError) throw new Error(emailError);
+      const email = ensureUniqueEmail(data.email);
+      const displayName = username;
+      const password = String(data.password || '');
+      const confirmPassword = String(data.confirmPassword || '');
+      const passwordError = validatePassword(password);
+      if (passwordError) throw new Error(passwordError);
+      if (password !== confirmPassword) throw new Error('The passwords do not match.');
 
-      const pinSalt = createPinSalt();
-      const pinHash = await hashPin(pin, pinSalt);
+      const passwordSalt = createPasswordSalt();
+      const passwordHash = await hashPassword(password, passwordSalt);
       const now = new Date().toISOString();
       const administrator = {
         id: makeId('u'),
         display_name: displayName,
         login_name: loginName,
+        email,
         account_status: 'active',
         is_admin: true,
-        pin_salt: pinSalt,
-        pin_hash: pinHash,
-        must_change_pin: false,
+        password_salt: passwordSalt,
+        password_hash: passwordHash,
+        password_format: 'password',
+        must_change_password: false,
         approved_at: now,
         approved_by: 'system',
         rejected_at: null,
@@ -826,26 +844,28 @@ async function handleSubmit(event) {
     }
 
     if (form.id === 'login-form') {
-      const loginName = normalizeLoginName(data.playerName);
-      const pin = String(data.pin || '');
-      const lock = getLoginLock(loginName);
+      const identifier = normalizeLoginIdentifier(data.identifier);
+      const password = String(data.password || '');
+      const lock = getLoginLock(identifier);
       if (lock.locked) throw new Error(`Too many attempts. Try again in ${lock.secondsRemaining} seconds.`);
-      if (!loginName || validatePin(pin)) throw new Error('Player name or PIN is incorrect.');
-
-      const loginUser = userByLoginName(loginName);
-      if (loginUser && !loginUser.pin_hash) throw new Error('Ask an admin to reset your PIN.');
-      const pinMatches = loginUser ? await verifyPin(pin, loginUser) : false;
-      if (!loginUser || !pinMatches) {
-        const nextLock = recordFailedLogin(loginName);
+      const loginUser = userByLoginIdentifier(identifier);
+      const invalidCredential = loginUser?.password_format === 'legacy_pin'
+        ? !/^\d{6}$/.test(password)
+        : Boolean(validatePassword(password));
+      if (!identifier || invalidCredential) throw new Error('Username/email or password is incorrect.');
+      if (loginUser && !loginUser.password_hash) throw new Error('Ask an admin to reset your password.');
+      const passwordMatches = loginUser ? await verifyPassword(password, loginUser) : false;
+      if (!loginUser || !passwordMatches) {
+        const nextLock = recordFailedLogin(identifier);
         if (nextLock.locked) throw new Error(`Too many attempts. Try again in ${nextLock.secondsRemaining} seconds.`);
-        throw new Error('Player name or PIN is incorrect.');
+        throw new Error('Username/email or password is incorrect.');
       }
       if (loginUser.account_status === 'pending') throw new Error('Your account is waiting for admin approval.');
       if (loginUser.account_status === 'rejected') throw new Error('Your registration was not approved.');
       if (loginUser.account_status === 'suspended') throw new Error('Your account has been suspended.');
       if (loginUser.account_status !== 'active') throw new Error('This account cannot log in.');
 
-      clearLoginAttempts(loginName);
+      clearLoginAttempts(identifier);
       setAuthSession(loginUser.id, data.remember === 'on');
       const users = getState().users.map(item => item.id === loginUser.id ? { ...item, last_login_at: new Date().toISOString() } : item);
       setState({ users, currentUserId: loginUser.id });
@@ -857,27 +877,33 @@ async function handleSubmit(event) {
     }
 
     if (form.id === 'register-form') {
-      const displayName = String(data.playerName || '').trim().replace(/\s+/g, ' ');
-      const nameError = validatePlayerName(displayName);
-      if (nameError) throw new Error(nameError);
-      const loginName = ensureUniqueLoginName(displayName);
-      const pin = String(data.pin || '');
-      const confirmPin = String(data.confirmPin || '');
-      const pinError = validatePin(pin);
-      if (pinError) throw new Error(pinError);
-      if (pin !== confirmPin) throw new Error('The PINs do not match.');
+      const username = normalizeUsername(data.username);
+      const usernameError = validateUsername(String(data.username || ''));
+      if (usernameError) throw new Error(usernameError);
+      const loginName = ensureUniqueLoginName(username);
+      const emailError = validateEmail(String(data.email || ''));
+      if (emailError) throw new Error(emailError);
+      const email = ensureUniqueEmail(data.email);
+      const displayName = username;
+      const password = String(data.password || '');
+      const confirmPassword = String(data.confirmPassword || '');
+      const passwordError = validatePassword(password);
+      if (passwordError) throw new Error(passwordError);
+      if (password !== confirmPassword) throw new Error('The passwords do not match.');
 
-      const pinSalt = createPinSalt();
-      const pinHash = await hashPin(pin, pinSalt);
+      const passwordSalt = createPasswordSalt();
+      const passwordHash = await hashPassword(password, passwordSalt);
       const applicant = {
         id: makeId('u'),
         display_name: displayName,
         login_name: loginName,
+        email,
         account_status: 'pending',
         is_admin: false,
-        pin_salt: pinSalt,
-        pin_hash: pinHash,
-        must_change_pin: false,
+        password_salt: passwordSalt,
+        password_hash: passwordHash,
+        password_format: 'password',
+        must_change_password: false,
         approved_at: null,
         approved_by: null,
         rejected_at: null,
@@ -890,7 +916,7 @@ async function handleSubmit(event) {
       addAudit('registration_submitted', null, null, {
         targetType: 'user',
         targetId: applicant.id,
-        details: { user_id: applicant.id, login_name: applicant.login_name }
+        details: { user_id: applicant.id, login_name: applicant.login_name, email: applicant.email }
       });
       commit({
         users: [...getState().users],
@@ -905,55 +931,59 @@ async function handleSubmit(event) {
     const user = currentUser();
     if (!user) throw new Error('Log in first.');
 
-    if (form.id === 'forced-pin-change-form') {
-      const pin = String(data.pin || '');
-      const confirmPin = String(data.confirmPin || '');
-      const pinError = validatePin(pin);
-      if (pinError) throw new Error(pinError);
-      if (pin !== confirmPin) throw new Error('The PINs do not match.');
-      const pinSalt = createPinSalt();
-      const pinHash = await hashPin(pin, pinSalt);
-      const users = getState().users.map(item => item.id === user.id ? { ...item, pin_salt: pinSalt, pin_hash: pinHash, must_change_pin: false } : item);
+    if (form.id === 'forced-password-change-form') {
+      const submittedEmail = String(data.email || user.email || '');
+      const emailError = validateEmail(submittedEmail);
+      if (emailError) throw new Error(emailError);
+      const email = ensureUniqueEmail(submittedEmail, user.id);
+      const password = String(data.password || '');
+      const confirmPassword = String(data.confirmPassword || '');
+      const passwordError = validatePassword(password);
+      if (passwordError) throw new Error(passwordError);
+      if (password !== confirmPassword) throw new Error('The passwords do not match.');
+      const passwordSalt = createPasswordSalt();
+      const passwordHash = await hashPassword(password, passwordSalt);
+      const users = getState().users.map(item => item.id === user.id ? { ...item, email, password_salt: passwordSalt, password_hash: passwordHash, password_format: 'password', must_change_password: false } : item);
       commit({ users });
-      navigate(defaultRouteForUser({ ...user, must_change_pin: false }));
+      navigate(defaultRouteForUser({ ...user, email, must_change_password: false }));
       triggerHapticFeedback('approved', { force: true });
-      showToast('New PIN saved.');
+      showToast('New password saved.');
       return;
     }
 
-    if (form.id === 'change-pin-form') {
-      const currentPin = String(data.currentPin || '');
-      if (!(await verifyPin(currentPin, user))) throw new Error('Current PIN is incorrect.');
-      const pin = String(data.pin || '');
-      const confirmPin = String(data.confirmPin || '');
-      const pinError = validatePin(pin);
-      if (pinError) throw new Error(pinError);
-      if (pin !== confirmPin) throw new Error('The PINs do not match.');
-      const pinSalt = createPinSalt();
-      const pinHash = await hashPin(pin, pinSalt);
-      commit({ users: getState().users.map(item => item.id === user.id ? { ...item, pin_salt: pinSalt, pin_hash: pinHash, must_change_pin: false } : item) });
+    if (form.id === 'change-password-form') {
+      const currentPassword = String(data.currentPassword || '');
+      if (!(await verifyPassword(currentPassword, user))) throw new Error('Current password is incorrect.');
+      const password = String(data.password || '');
+      const confirmPassword = String(data.confirmPassword || '');
+      const passwordError = validatePassword(password);
+      if (passwordError) throw new Error(passwordError);
+      if (password !== confirmPassword) throw new Error('The passwords do not match.');
+      const passwordSalt = createPasswordSalt();
+      const passwordHash = await hashPassword(password, passwordSalt);
+      commit({ users: getState().users.map(item => item.id === user.id ? { ...item, password_salt: passwordSalt, password_hash: passwordHash, password_format: 'password', must_change_password: false } : item) });
       closeActiveModal();
-      showToast('PIN changed.');
+      showToast('Password changed.');
       return;
     }
 
-    if (form.id === 'admin-reset-pin-form') {
+    if (form.id === 'admin-reset-password-form') {
       if (!user.is_admin) throw new Error('Admin only.');
       const targetUser = userById(String(data.userId || ''));
       if (!targetUser) throw new Error('Account not found.');
-      const pin = String(data.pin || '');
-      const confirmPin = String(data.confirmPin || '');
-      const pinError = validatePin(pin);
-      if (pinError) throw new Error(pinError);
-      if (pin !== confirmPin) throw new Error('The PINs do not match.');
-      const pinSalt = createPinSalt();
-      const pinHash = await hashPin(pin, pinSalt);
-      const users = getState().users.map(item => item.id === targetUser.id ? { ...item, pin_salt: pinSalt, pin_hash: pinHash, must_change_pin: true } : item);
-      addNotification(targetUser.id, 'PIN reset', 'An admin reset your PIN. Log in with the temporary PIN, then choose a new one.', { type: 'info' });
-      addAudit('pin_reset', null, user.id, { targetType: 'user', targetId: targetUser.id, details: { user_id: targetUser.id } });
+      const password = String(data.password || '');
+      const confirmPassword = String(data.confirmPassword || '');
+      const passwordError = validatePassword(password);
+      if (passwordError) throw new Error(passwordError);
+      if (password !== confirmPassword) throw new Error('The passwords do not match.');
+      const passwordSalt = createPasswordSalt();
+      const passwordHash = await hashPassword(password, passwordSalt);
+      const users = getState().users.map(item => item.id === targetUser.id ? { ...item, password_salt: passwordSalt, password_hash: passwordHash, password_format: 'password', must_change_password: true } : item);
+      addNotification(targetUser.id, 'Password reset', 'An admin reset your password. Log in with the temporary password, then choose a new one.', { type: 'info' });
+      addAudit('password_reset', null, user.id, { targetType: 'user', targetId: targetUser.id, details: { user_id: targetUser.id } });
       commit({ users, notifications: [...getState().notifications], auditLogs: [...getState().auditLogs] });
       closeActiveModal();
-      showToast('Temporary PIN saved.');
+      showToast('Temporary password saved.');
       return;
     }
 
@@ -1309,14 +1339,17 @@ async function handleSubmit(event) {
       showToast('Money record fixed.');
     } else if (form.id === 'profile-form') {
       const displayName = String(data.displayName || '').trim().replace(/\s+/g, ' ');
-      const nameError = validatePlayerName(displayName);
+      const nameError = validateDisplayName(displayName);
       if (nameError) throw new Error(nameError);
+      const emailError = validateEmail(String(data.email || ''));
+      if (emailError) throw new Error(emailError);
+      const email = ensureUniqueEmail(data.email, user.id);
       commit({
         users: getState().users.map(item =>
-          item.id === user.id ? { ...item, display_name: displayName } : item
+          item.id === user.id ? { ...item, display_name: displayName, email } : item
         )
       });
-      showToast('Player name saved.');
+      showToast('Profile saved.');
     }
   } catch (error) {
     console.error(error);
@@ -1483,11 +1516,11 @@ async function handleAction(event) {
       triggerHapticFeedback('rejected', { force: true });
       showToast('Registration rejected.', 'error');
       requestAnimationFrame(() => syncAdminRegistrationApprovalQueue(currentUser()));
-    } else if (target.dataset.adminResetPin) {
+    } else if (target.dataset.adminResetPassword) {
       if (!user.is_admin) throw new Error('Admin only.');
-      const targetUser = userById(target.dataset.adminResetPin);
+      const targetUser = userById(target.dataset.adminResetPassword);
       if (!targetUser) throw new Error('Account not found.');
-      openModal('reset-pin', { userId: targetUser.id, userName: targetUser.display_name });
+      openModal('reset-password', { userId: targetUser.id, userName: targetUser.display_name });
     } else if (target.dataset.adminDeleteUser) {
       if (!user.is_admin) throw new Error('Admin only.');
       const targetUserId = target.dataset.adminDeleteUser;
