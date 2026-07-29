@@ -274,7 +274,8 @@ small { color: var(--muted); }
   clip-path: polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
 }
 .big-action span { color: var(--blue); font-size: 2rem; }
-.big-action:hover { border-color: var(--line-strong); transform: translateY(-1px); }
+.big-action:hover:not(:disabled) { border-color: var(--line-strong); transform: translateY(-1px); }
+.big-action:disabled { cursor: not-allowed; opacity: .68; transform: none; }
 .big-action--primary { background: linear-gradient(145deg, rgba(43,131,202,.34), rgba(63,54,164,.28)); }
 
 .simple-panel, .panel {
@@ -293,6 +294,7 @@ small { color: var(--muted); }
 .session-card__top { display: flex; align-items: center; justify-content: space-between; gap: .7rem; margin-bottom: 1rem; }
 .session-card h3 { margin-bottom: .25rem; font-size: 1.15rem; }
 .session-card p { margin-bottom: .8rem; color: var(--muted); }
+.session-card__join { width: 100%; margin-top: auto; }
 .code { color: var(--blue); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; font-weight: 800; }
 .open-label { margin-top: auto; color: var(--blue); font-size: .83rem; font-weight: 800; }
 

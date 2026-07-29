@@ -100,6 +100,8 @@ Deno.serve(async request => {
     }
 
     if (action === 'hard_reset') {
+      const { error: clearError } = await admin.rpc('admin_clear_activity');
+      if (clearError) throw clearError;
       while (true) {
         const { data, error } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
         if (error) throw error;

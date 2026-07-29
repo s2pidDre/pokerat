@@ -206,41 +206,51 @@ export function homeView({ sessions, requests, profile }) {
   const pending = pendingRequests(requests);
   const hostPending = pending.filter(request => request.session?.host_user_id === profile.id);
   const firstName = escapeHtml(profile.display_name.split(' ')[0]);
+  const openTableExists = openSessions.length > 0;
 
   return `
     ${pageHeader('', `Hi, ${firstName}`, 'What do you want to do?')}
     <section class="big-actions">
-      <button class="big-action big-action--primary" data-open="create-session"><span>＋</span><strong>Create table</strong></button>
+      ${openTableExists
+        ? '<button class="big-action big-action--primary" disabled title="Finish or cancel the open table before creating another."><span>◆</span><strong>Table already open</strong></button>'
+        : '<button class="big-action big-action--primary" data-open="create-session"><span>＋</span><strong>Create table</strong></button>'}
       <button class="big-action" data-open="join-session"><span>→</span><strong>Join table</strong></button>
     </section>
 
     ${hostPending.length ? `<section class="simple-panel alert-panel"><div><strong>${hostPending.length} request${hostPending.length === 1 ? '' : 's'} waiting</strong><span>Open the table to approve or reject.</span></div><a class="button button--primary" href="#/session/${hostPending[0].session_id}">Review</a></section>` : ''}
 
     <section class="section-block">
-      <div class="section-heading"><h2>${openSessions.length ? 'Your tables' : 'No table yet'}</h2>${openSessions.length > 2 ? '<a href="#/sessions">See all</a>' : ''}</div>
-      <div class="card-grid">${openSessions.length ? openSessions.map(session => sessionCard(session, profile.id)).join('') : emptyState('No open table', 'Create a table or join one using its code.')}</div>
+      <div class="section-heading"><h2>${openSessions.length ? 'Open table' : 'No table yet'}</h2>${openSessions.length > 2 ? '<a href="#/sessions">See all</a>' : ''}</div>
+      <div class="card-grid">${openSessions.length ? openSessions.map(session => sessionCard(session, profile.id)).join('') : emptyState('No open table', 'Create a table or wait for a friend to create one.')}</div>
     </section>`;
 }
 
 export function sessionsView(sessions, profileId) {
   const open = sessions.filter(session => !['closed', 'cancelled'].includes(session.status));
   const finished = sessions.filter(session => ['closed', 'cancelled'].includes(session.status));
+  const createButton = open.length
+    ? '<button class="button button--primary" disabled title="Only one open table is allowed.">Table already open</button>'
+    : '<button class="button button--primary" data-open="create-session">Create</button>';
   return `
-    ${pageHeader('', 'Tables', '', '<button class="button button--secondary" data-open="join-session">Join</button><button class="button button--primary" data-open="create-session">Create</button>')}
+    ${pageHeader('', 'Tables', '', `<button class="button button--secondary" data-open="join-session">Join</button>${createButton}`)}
     <section class="section-block"><div class="section-heading"><h2>Open</h2><span>${open.length}</span></div><div class="card-grid">${open.length ? open.map(session => sessionCard(session, profileId)).join('') : '<p class="empty-copy">No open tables.</p>'}</div></section>
     <section class="section-block"><div class="section-heading"><h2>Finished</h2><span>${finished.length}</span></div><div class="card-grid">${finished.length ? finished.map(session => sessionCard(session, profileId)).join('') : '<p class="empty-copy">No finished tables.</p>'}</div></section>`;
 }
 
 export function sessionCard(session, profileId) {
   const own = session.host_user_id === profileId;
-  return `
-    <a class="session-card system-window" href="#/session/${session.id}">
+  const joined = own || session.session_members?.some(member => member.user_id === profileId);
+  const content = `
       <div class="session-card__top"><span class="status status--${session.status}">${statusLabel(session.status)}</span><span class="code">${escapeHtml(session.session_code)}</span></div>
       <h3>${escapeHtml(session.name)}</h3>
       <p>${own ? 'Created by you' : `Created by ${escapeHtml(session.host?.display_name || 'User')}`}</p>
-      ${sessionTimerMarkup(session, true)}
-      <span class="open-label">Open table →</span>
-    </a>`;
+      ${sessionTimerMarkup(session, true)}`;
+
+  if (joined) {
+    return `<a class="session-card system-window" href="#/session/${session.id}">${content}<span class="open-label">Open table →</span></a>`;
+  }
+
+  return `<article class="session-card system-window">${content}<button class="button button--primary session-card__join" data-join-open-table="${escapeHtml(session.session_code)}">Join table</button></article>`;
 }
 
 function activeSessionTimerMarkup(session) {

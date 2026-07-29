@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'pokerat-app-v1';
 const LEGACY_STORAGE_KEY = 'pokerat-local-prototype-v1';
-const SCHEMA_VERSION = 14;
+const SCHEMA_VERSION = 15;
 
 const LEGACY_SEED_USER_IDS = new Set(['u-host', 'u-player', 'u-carlo', 'u-dana', 'u-admin']);
 const LEGACY_SEED_SESSION_IDS = new Set(['s-friday', 's-weekend', 's-sunday', 's-open', 's-closed']);
@@ -30,7 +30,8 @@ export function createEmptyData() {
     requests: { join: [], buyin: [], cashout: [] },
     notifications: [],
     reports: [],
-    auditLogs: []
+    auditLogs: [],
+    sessionResults: []
   };
 }
 
@@ -262,6 +263,19 @@ function normalizeData(raw) {
       created_at: stringOrEmpty(log.created_at) || new Date().toISOString()
     }));
 
+  const sessionResults = arrayOrEmpty(cleaned.sessionResults)
+    .filter(result => result && stringOrEmpty(result.id) && stringOrEmpty(result.session_id) && userIds.has(result.user_id))
+    .map(result => ({
+      id: result.id,
+      session_id: result.session_id,
+      user_id: result.user_id,
+      cash_in: Number(result.cash_in) || 0,
+      cash_out: Number(result.cash_out) || 0,
+      net: Number(result.net) || 0,
+      duration_seconds: Math.max(0, Math.floor(Number(result.duration_seconds) || 0)),
+      created_at: stringOrEmpty(result.created_at) || new Date().toISOString()
+    }));
+
   const currentUserId = userIds.has(cleaned.currentUserId) ? cleaned.currentUserId : null;
   return {
     meta: { schemaVersion: SCHEMA_VERSION, storage_notice: '', hasActiveAdministrator: Boolean(cleaned.meta?.hasActiveAdministrator) },
@@ -273,7 +287,8 @@ function normalizeData(raw) {
     requests,
     notifications,
     reports,
-    auditLogs
+    auditLogs,
+    sessionResults
   };
 }
 
@@ -328,7 +343,8 @@ export function clearActivityData(existingData) {
     requests: { join: [], buyin: [], cashout: [] },
     notifications: [],
     reports: [],
-    auditLogs: []
+    auditLogs: [],
+    sessionResults: []
   };
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(cleared));

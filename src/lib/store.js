@@ -11,6 +11,7 @@ const state = {
   notifications: [],
   reports: [],
   auditLogs: [],
+  sessionResults: [],
   route: typeof location !== 'undefined' ? (location.hash || '#/home') : '#/home',
   loading: true,
   error: ''

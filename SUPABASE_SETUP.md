@@ -1,94 +1,127 @@
-# Pokerat Supabase setup
+# Pokerat Supabase realtime table setup
 
-Complete these steps on the `database-realtime` Git branch.
+The authentication schema and both Edge Functions should already exist. Complete the steps below on the `database-realtime` Git branch.
 
-## 1. Authentication setting
+## 1. Install the shared table schema
 
 In Supabase Dashboard:
 
 ```text
-Authentication
-→ Providers
-→ Email
+SQL Editor
+→ New query
 ```
 
-Keep Email enabled. For initial testing, turn **Confirm email** off.
-
-## 2. Create the database schema
-
-1. Open **SQL Editor**.
-2. Click **New query**.
-3. Open `supabase/schema.sql` from this project.
-4. Copy the entire file into the SQL Editor.
-5. Click **Run** once.
-
-A successful run creates the `profiles` table, account rules, first-admin setup, Row Level Security and the realtime publication.
-
-## 3. Deploy `username-login`
-
-1. Open **Edge Functions**.
-2. Click **Deploy a new function**.
-3. Choose **Via Editor**.
-4. Name it exactly:
+Open this repository file:
 
 ```text
-username-login
+supabase/table-system.sql
 ```
 
-5. Replace the editor contents with `supabase/functions/username-login/index.ts`.
-6. Turn **Verify JWT** off for this function because it is used before login.
-7. Deploy it.
+Copy the entire file into the SQL Editor and click **Run**.
 
-## 4. Deploy `admin-account`
+This creates the shared database for:
 
-1. Create another Edge Function through the editor.
-2. Name it exactly:
+- Poker tables
+- Table members
+- Cash-in and cash-out requests
+- Transactions
+- Notifications
+- Closed-session results
+- Reports
+- Audit logs
+- Atomic table actions
+- Row Level Security
+- Realtime publications
+
+The file is written to be rerunnable if the first attempt is interrupted.
+
+## 2. Redeploy `admin-account`
+
+The Admin function now clears shared table activity before Hard Reset deletes accounts.
+
+Open:
 
 ```text
-admin-account
+Edge Functions
+→ admin-account
 ```
 
-3. Replace the editor contents with `supabase/functions/admin-account/index.ts`.
-4. Keep **Verify JWT** on.
-5. Deploy it.
-
-The functions use Supabase's built-in server environment variables. Do not paste a service-role key into the code.
-
-## 5. Clear the old local prototype data
-
-Because Supabase uses UUID account IDs, old browser-only accounts and their local test tables are not migrated.
-
-In the browser where you tested the old local build:
-
-1. Open Developer Tools with `F12`.
-2. Open **Application**.
-3. Open **Storage**.
-4. Click **Clear site data**.
-5. Reload Pokerat.
-
-The first screen should be **Create administrator**.
-
-## 6. Test the complete account flow
-
-1. Create the first administrator.
-2. Open Pokerat in another browser or Incognito window.
-3. Register a normal account.
-4. Keep the new account on the Waiting screen.
-5. Return to the administrator browser.
-6. The approval request should appear without refreshing.
-7. Approve it.
-8. The Waiting screen should change automatically.
-9. Log out and verify both username login and email login.
-10. Test Remember Me by closing and reopening the browser.
-
-## 7. Commit to GitHub
-
-After testing in GitHub Desktop:
+Replace its code with:
 
 ```text
-Summary: Connect Supabase authentication and realtime account approval
+supabase/functions/admin-account/index.ts
+```
+
+Deploy it again and keep **Verify JWT On**.
+
+The existing `username-login` function does not need to change.
+
+## 3. Refresh Pokerat
+
+Restart Live Server and press:
+
+```text
+Ctrl + F5
+```
+
+Old browser-only table activity is ignored. Your real Supabase accounts remain.
+
+## 4. Test with two sessions
+
+Use one normal browser window for the table creator and one Incognito window for another approved account.
+
+Test in this order:
+
+1. Create a table in the normal window.
+2. Copy the table code.
+3. Join it in Incognito.
+4. Confirm both screens update without refreshing.
+5. Start the table.
+6. Submit a cash-in request from Incognito.
+7. Confirm the centred host approval queue appears automatically.
+8. Approve it and confirm table money updates on both screens.
+9. Submit and decide a cash-out request.
+10. Close the table.
+11. Confirm the final result, History, duration and Leaderboard update on both accounts.
+
+## 5. Check Realtime if updates do not appear
+
+In Supabase, open:
+
+```text
+Database
+→ Publications
+→ supabase_realtime
+```
+
+Confirm these tables are enabled:
+
+```text
+poker_tables
+table_members
+money_requests
+transactions
+notifications
+session_results
+session_reports
+audit_logs
+```
+
+The SQL normally enables them automatically.
+
+## 6. Commit after testing
+
+In GitHub Desktop:
+
+```text
+Summary: Move poker tables and notifications to Supabase realtime
 Commit to database-realtime
 Push origin
 ```
 
-Do not merge into `main` until the account flow works on two separate browser sessions.
+Keep `main` unchanged until the complete two-account workflow passes.
+
+
+## Updating the table rules
+
+Re-run `supabase/table-system.sql` after applying this update. It adds the single globally open table rule, makes the open table discoverable to every approved account, and keeps closed-table history private to participants and administrators.

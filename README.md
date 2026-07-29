@@ -1,46 +1,43 @@
 # Pokerat
 
-Pokerat is a lightweight poker-table companion for private games with friends. It tracks table sessions, cash-in and cash-out requests, session duration, finished-table history, and an all-time leaderboard.
+Pokerat is a private poker-table companion for games with friends. It now uses Supabase for accounts, shared tables, cash-in and cash-out requests, transactions, notifications, finished-session history and the global leaderboard.
 
-## Current migration stage
+## Current realtime features
 
-This branch uses **Supabase Auth and the Supabase `profiles` table** for:
+- Username or email + password login
+- Administrator approval for new accounts
+- Shared table creation and table-code joining
+- Live member changes across devices
+- One-at-a-time host cash-in/cash-out approval queue
+- Automatic table-money calculations after approval
+- Realtime approval and rejection notifications
+- Session timer, closing review and saved duration
+- Finished-table History
+- Global Leaderboard calculated only from closed tables
+- Realtime final-result pop-ups
+- Remote reports and audit records
+- Admin Clear Activity and Hard Reset
 
-- Username, email and password registration
-- Username or email login
-- Remember Me sessions
-- First-administrator setup
-- Administrator approval, rejection, suspension and restoration
-- Administrator password reset and account deletion
-- Realtime account-approval updates without refreshing
+## Setup
 
-Poker tables, money requests, transactions, History and Leaderboard still use browser storage in this stage. They will be moved to Supabase after authentication has been tested successfully.
+Complete `SUPABASE_SETUP.md` before testing this branch.
 
 ## Run locally
 
-1. Complete `SUPABASE_SETUP.md` first.
-2. Open the project folder in VS Code.
-3. Right-click `index.html`.
-4. Choose **Open with Live Server**.
-5. Refresh with `Ctrl + F5` after replacing files.
+1. Open the repository folder in VS Code.
+2. Right-click `index.html`.
+3. Choose **Open with Live Server**.
+4. Open a normal browser and an Incognito browser to test two accounts.
+5. Refresh using `Ctrl + F5` after replacing files.
 
 The browser loads `supabase-js` from jsDelivr, so an internet connection is required.
-
-## Account flow
-
-- Registration uses **username, email, password and confirm password**.
-- Login accepts **username or email** plus password.
-- New accounts stay **Waiting** until an administrator approves them.
-- The first launch creates the first administrator securely through Supabase.
-- Pending users receive the approval change in realtime while the page is open.
-- Regular users never see the Admin page.
-- Supabase stores and verifies passwords; Pokerat does not store password hashes in browser data.
 
 ## Supabase files
 
 ```text
 supabase/
 ├── schema.sql
+├── table-system.sql
 ├── config.toml
 └── functions/
     ├── username-login/
@@ -49,22 +46,19 @@ supabase/
         └── index.ts
 ```
 
-The frontend connection is configured in:
+Frontend services:
 
 ```text
-src/lib/supabase.js
+src/lib/
+├── supabase.js
+├── account-service.js
+└── table-service.js
 ```
 
-The included key is a browser-safe Supabase publishable key. Never add a database password, secret key or `service_role` key to the frontend or GitHub.
+The publishable key in `src/lib/supabase.js` is browser-safe. Never add a database password, secret key or `service_role` key to the frontend or GitHub.
 
 ## Tests
-
-Run:
 
 ```bash
 npm test
 ```
-
-## Important limitation
-
-Account registration and approval work between separate devices in realtime after the Supabase setup is completed. Poker tables and money activity remain local to each browser until the next database migration stage.

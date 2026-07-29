@@ -1,7 +1,7 @@
 import { getState, setState, subscribe } from './lib/store.js';
 import { initRouter, navigate, parseRoute } from './lib/router.js';
 import { closeAdminRegistrationApprovalDialog, closeHostMoneyApprovalDialog, confirmDialog, setButtonBusy, showAdminRegistrationApprovalDialog, showFinalResultDialog, showHostMoneyApprovalDialog, showNotificationPopup, showToast, triggerHapticFeedback } from './lib/ui.js';
-import { clearActivityData, loadAppData, makeId, resetAppData, saveAppData } from './lib/app-data.js';
+import { loadAppData, resetAppData, saveAppData } from './lib/app-data.js';
 import {
   adminView,
   appShell,
@@ -19,16 +19,19 @@ import {
   suspendedView
 } from './components/templates.js';
 import { availableTableFunds, playerSummary, toCents } from './utils/accounting.js';
-import { durationSecondsBetween, escapeHtml, formatCurrency, formatDuration, formatDurationSeconds } from './utils/format.js';
+import { escapeHtml, formatCurrency, formatDuration, formatDurationSeconds } from './utils/format.js';
 import { buildClosedTableLeaderboard } from './utils/leaderboard.js';
 import { validAmount } from './utils/validation.js';
 import { clearLoginAttempts, getLoginLock, normalizeLoginIdentifier, recordFailedLogin, validateDisplayName, validateEmail, validatePassword } from './utils/auth.js';
 import { changeOwnPassword, completeForcedPasswordChange, createFirstAdministrator, getCurrentProfile, getSession, getVisibleProfiles, hasActiveAdministrator, loginAccount, logoutAccount, onAuthStateChange, registerAccount, runAdminAccountAction, subscribeToProfiles, unsubscribeFromProfiles, updateOwnProfile } from './lib/account-service.js';
+import { cancelMoneyRequest, cancelPokerTable, clearRemoteActivity, closePokerTable, correctPokerTransaction, createPokerTable, joinPokerTable, loadPokeratActivity, markAllNotificationsRead, markNotificationRead, recordHostMoney, removeTableMember, reviewMoneyRequest, reviewSessionReport, startPokerTable, submitMoneyRequest, submitSessionReport, subscribeToPokeratActivity, transferTableHost, unsubscribeFromPokeratActivity } from './lib/table-service.js';
 
 const app = document.getElementById('app');
 let renderQueued = false;
 let sessionTimerInterval = null;
 const surfacedNotificationIds = new Set();
+let activityRefreshTimer = null;
+let activityRefreshPromise = null;
 
 function queueRender() {
   if (renderQueued) return;
@@ -74,19 +77,15 @@ function persistState() {
     meta: state.meta,
     currentUserId: null,
     users: state.users,
-    sessions: state.sessions,
-    members: state.members,
-    transactions: state.transactions,
-    requests: state.requests,
-    notifications: state.notifications,
-    reports: state.reports,
-    auditLogs: state.auditLogs
+    sessions: [],
+    members: [],
+    transactions: [],
+    requests: { join: [], buyin: [], cashout: [] },
+    notifications: [],
+    reports: [],
+    auditLogs: [],
+    sessionResults: []
   });
-}
-
-function commit(patch) {
-  setState(patch);
-  persistState();
 }
 
 function currentUser() {
@@ -122,6 +121,13 @@ function enrichSession(session) {
 function sessionsForUser(userId) {
   return getState().sessions
     .filter(session => isMember(session.id, userId))
+    .map(enrichSession)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+}
+
+function visibleSessionsForUser(userId) {
+  return getState().sessions
+    .filter(session => ['lobby', 'active'].includes(session.status) || isMember(session.id, userId))
     .map(enrichSession)
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 }
@@ -205,27 +211,6 @@ function adminLogs() {
       session: enrichSession(sessionById(log.session_id))
     }))
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-}
-
-function addNotification(userId, title, message, options = {}) {
-  if (!userId) return null;
-  const notification = {
-    id: makeId('n'),
-    user_id: userId,
-    title,
-    message,
-    type: options.type || 'info',
-    session_id: options.sessionId || null,
-    action_hash: options.actionHash || (options.sessionId ? `#/session/${options.sessionId}` : ''),
-    request_id: options.requestId || null,
-    request_kind: options.requestKind || '',
-    delivery: options.delivery || '',
-    result_summary: options.resultSummary && typeof options.resultSummary === 'object' ? options.resultSummary : null,
-    created_at: new Date().toISOString(),
-    read_at: null
-  };
-  getState().notifications.unshift(notification);
-  return notification;
 }
 
 function surfaceNewNotifications(userId, notifications) {
@@ -371,75 +356,18 @@ function syncFinalResultPopup(user, notifications) {
     netValue: Number(result.net) || 0,
     durationText: formatDurationSeconds(result.duration_seconds || 0),
     onDone: () => {
-      const item = getState().notifications.find(entry => entry.id === notification.id);
-      if (item && !item.read_at) {
-        item.read_at = new Date().toISOString();
-        commit({ notifications: [...getState().notifications] });
-      }
-      requestAnimationFrame(() => syncFinalResultPopup(currentUser(), unreadNotifications(currentUser()?.id)));
+      markNotificationRead(notification.id)
+        .then(() => refreshRemoteActivity({ quiet: true }))
+        .then(() => requestAnimationFrame(() => syncFinalResultPopup(currentUser(), unreadNotifications(currentUser()?.id))))
+        .catch(error => showToast(error.message || 'Could not clear the result.', 'error'));
     }
   });
-}
-
-function markRequestNotificationRead(requestId, hostId) {
-  const now = new Date().toISOString();
-  getState().notifications.forEach(notification => {
-    if (
-      notification.user_id === hostId &&
-      notification.request_id === requestId &&
-      !notification.read_at
-    ) {
-      notification.read_at = now;
-    }
-  });
-}
-
-function addAudit(action, sessionId = null, actorId = currentUser()?.id || null, options = {}) {
-  getState().auditLogs.unshift({
-    id: makeId('a'),
-    action,
-    actor_id: actorId,
-    session_id: sessionId,
-    target_type: options.targetType || '',
-    target_id: options.targetId || '',
-    details: options.details && typeof options.details === 'object' ? options.details : {},
-    created_at: new Date().toISOString()
-  });
-}
-
-function addTransaction(sessionId, playerId, type, amount, reason = '', options = {}) {
-  const transaction = {
-    id: makeId('t'),
-    session_id: sessionId,
-    player_id: playerId,
-    transaction_type: type,
-    amount: Number(amount),
-    is_reversed: false,
-    correction_reason: reason,
-    reverses_transaction_id: options.reversesTransactionId || null,
-    request_id: options.requestId || null,
-    metadata: options.metadata || {},
-    created_at: new Date().toISOString()
-  };
-  getState().transactions.push(transaction);
-  return transaction;
-}
-
-function cloneRequests() {
-  const requests = getState().requests;
-  return { join: [...requests.join], buyin: [...requests.buyin], cashout: [...requests.cashout] };
-}
-
-function generateCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let value = '';
-  for (let index = 0; index < 4; index += 1) value += chars[Math.floor(Math.random() * chars.length)];
-  return `PKR-${value}`;
 }
 
 async function signOut(message = '') {
   await logoutAccount();
   unsubscribeFromProfiles();
+  unsubscribeFromPokeratActivity();
   closeActiveModal();
   closeAdminRegistrationApprovalDialog();
   closeHostMoneyApprovalDialog();
@@ -464,6 +392,7 @@ async function refreshRemoteProfiles({ routeAfterApproval = true } = {}) {
   const profile = await getCurrentProfile();
   if (!profile) {
     unsubscribeFromProfiles();
+    unsubscribeFromPokeratActivity();
     setState({ currentUserId: null });
     persistState();
     return null;
@@ -475,6 +404,8 @@ async function refreshRemoteProfiles({ routeAfterApproval = true } = {}) {
   persistState();
 
   if (routeAfterApproval && previous?.account_status === 'pending' && profile.account_status === 'active') {
+    await refreshRemoteActivity({ quiet: true });
+    startActivityRealtime();
     navigate(defaultRouteForUser(profile));
     triggerHapticFeedback('approved', { force: true });
     showToast('Your account was approved.');
@@ -486,6 +417,59 @@ function startProfileRealtime() {
   subscribeToProfiles(() => {
     window.setTimeout(() => refreshRemoteProfiles().catch(error => console.error('Profile refresh failed:', error)), 0);
   });
+}
+
+function mergeActivityUsers(activityUsers, profile = currentUser()) {
+  return mergeRemoteProfiles(activityUsers || [], profile || null);
+}
+
+async function refreshRemoteActivity({ quiet = false } = {}) {
+  if (activityRefreshPromise) return activityRefreshPromise;
+  activityRefreshPromise = (async () => {
+    try {
+      const activity = await loadPokeratActivity();
+      const profile = currentUser();
+      setState({
+        ...activity,
+        users: mergeActivityUsers(activity.users, profile),
+        currentUserId: profile?.id || getState().currentUserId,
+        error: ''
+      });
+      persistState();
+      return activity;
+    } catch (error) {
+      if (!quiet) showToast(error.message || 'Could not refresh table data.', 'error', 5000);
+      throw error;
+    } finally {
+      activityRefreshPromise = null;
+    }
+  })();
+  return activityRefreshPromise;
+}
+
+function queueActivityRefresh(delay = 80) {
+  if (activityRefreshTimer) window.clearTimeout(activityRefreshTimer);
+  activityRefreshTimer = window.setTimeout(() => {
+    activityRefreshTimer = null;
+    refreshRemoteActivity({ quiet: true }).catch(error => console.error('Realtime activity refresh failed:', error));
+  }, delay);
+}
+
+function startActivityRealtime() {
+  subscribeToPokeratActivity(
+    () => queueActivityRefresh(),
+    (status, error) => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.error('Pokerat realtime channel error:', error || status);
+      }
+    }
+  );
+}
+
+async function refreshAllRemoteData({ routeAfterApproval = false } = {}) {
+  const profile = await refreshRemoteProfiles({ routeAfterApproval });
+  if (profile?.account_status === 'active') await refreshRemoteActivity({ quiet: true });
+  return profile;
 }
 
 function render() {
@@ -531,7 +515,8 @@ function render() {
   }
 
   const route = parseRoute(state.route);
-  const sessions = sessionsForUser(user.id);
+  const memberSessions = sessionsForUser(user.id);
+  const sessions = visibleSessionsForUser(user.id);
   const requests = requestsForUser(user.id);
   const effectiveRoute = route;
   let content;
@@ -550,20 +535,21 @@ function render() {
       const leaderboard = buildClosedTableLeaderboard({
         sessions: state.sessions,
         transactions: state.transactions,
-        users: state.users
+        users: state.users,
+        sessionResults: state.sessionResults
       });
       content = leaderboardView({
         leaderboard,
         profileId: user.id,
-        closedTableCount: state.sessions.filter(session => session.status === 'closed').length
+        closedTableCount: new Set((state.sessionResults || []).map(result => result.session_id)).size
       });
       break;
     }
     case 'history':
-      content = historyView({ sessions, profileId: user.id });
+      content = historyView({ sessions: memberSessions, profileId: user.id });
       break;
     case 'profile':
-      content = profileView(user, user, sessions);
+      content = profileView(user, user, memberSessions);
       break;
     case 'admin':
       content = user.is_admin
@@ -632,12 +618,27 @@ async function bootstrap() {
 
     data.users = users;
     data.currentUserId = authenticatedProfile?.id || null;
+    if (authenticatedProfile?.account_status === 'active') {
+      const activity = await loadPokeratActivity();
+      Object.assign(data, activity);
+      data.users = mergeRemoteProfiles(activity.users || [], authenticatedProfile);
+    } else {
+      data.sessions = [];
+      data.members = [];
+      data.transactions = [];
+      data.requests = { join: [], buyin: [], cashout: [] };
+      data.notifications = [];
+      data.reports = [];
+      data.auditLogs = [];
+      data.sessionResults = [];
+    }
     setState({ ...data, loading: false });
 
     if (!hasAdministrator) {
       history.replaceState(null, '', '#/setup');
     } else if (authenticatedProfile) {
       startProfileRealtime();
+      if (authenticatedProfile.account_status === 'active') startActivityRealtime();
       const preferredRoute = authenticatedProfile.account_status === 'active'
         ? defaultRouteForUser(authenticatedProfile)
         : authenticatedProfile.account_status;
@@ -664,15 +665,24 @@ async function bootstrap() {
   onAuthStateChange((event) => {
     if (event === 'SIGNED_OUT') {
       unsubscribeFromProfiles();
-      setState({ currentUserId: null });
+      unsubscribeFromPokeratActivity();
+      setState({
+        currentUserId: null,
+        sessions: [], members: [], transactions: [],
+        requests: { join: [], buyin: [], cashout: [] },
+        notifications: [], reports: [], auditLogs: [], sessionResults: []
+      });
       persistState();
       queueRender();
       return;
     }
     if (['SIGNED_IN', 'TOKEN_REFRESHED', 'USER_UPDATED'].includes(event)) {
       window.setTimeout(() => {
-        refreshRemoteProfiles({ routeAfterApproval: false })
-          .then(() => startProfileRealtime())
+        refreshAllRemoteData({ routeAfterApproval: false })
+          .then(profile => {
+            startProfileRealtime();
+            if (profile?.account_status === 'active') startActivityRealtime();
+          })
           .catch(error => console.error('Auth refresh failed:', error));
       }, 0);
     }
@@ -715,9 +725,8 @@ function bindEvents() {
       closeActiveModal();
       closeHostMoneyApprovalDialog();
       surfacedNotificationIds.clear();
-      const cleared = clearActivityData(getState());
-      setState({ ...cleared, loading: false, error: '' });
-      persistState();
+      await clearRemoteActivity();
+      await refreshRemoteActivity({ quiet: true });
       navigate('admin');
       showToast('All activity cleared. Registered users were kept.');
       return;
@@ -741,6 +750,7 @@ function bindEvents() {
       await runAdminAccountAction('hard_reset');
       await logoutAccount().catch(() => {});
       unsubscribeFromProfiles();
+      unsubscribeFromPokeratActivity();
       const fresh = resetAppData();
       fresh.currentUserId = null;
       fresh.meta = { ...(fresh.meta || {}), hasActiveAdministrator: false };
@@ -803,11 +813,8 @@ function bindEvents() {
     }
 
     if (event.target.closest('[data-mark-notifications-read]')) {
-      const now = new Date().toISOString();
-      const notifications = getState().notifications.map(item =>
-        item.user_id === currentUser().id && !item.read_at ? { ...item, read_at: now } : item
-      );
-      commit({ notifications });
+      await markAllNotificationsRead();
+      await refreshRemoteActivity({ quiet: true });
       closeActiveModal();
       showToast('Notifications cleared.');
       return;
@@ -851,7 +858,9 @@ async function handleSubmit(event) {
         meta: { ...getState().meta, hasActiveAdministrator: true }
       });
       persistState();
+      await refreshRemoteActivity({ quiet: true });
       startProfileRealtime();
+      startActivityRealtime();
       navigate('admin');
       triggerHapticFeedback('approved', { force: true });
       showToast('Administrator created.');
@@ -884,6 +893,8 @@ async function handleSubmit(event) {
       startProfileRealtime();
 
       if (loginUser.account_status === 'active') {
+        await refreshRemoteActivity({ quiet: true });
+        startActivityRealtime();
         navigate(defaultRouteForUser(loginUser));
         triggerHapticFeedback('approved', { force: true });
         showToast(`Welcome, ${loginUser.display_name}.`);
@@ -962,352 +973,78 @@ async function handleSubmit(event) {
 
     if (form.id === 'create-session-form') {
       const name = String(data.name || '').trim();
-      if (!name) throw new Error('Session name is required.');
-
-      const id = makeId('s');
-      const code = generateCode();
-      getState().sessions.push({
-        id,
-        session_code: code,
-        name,
-        location: '',
-        host_user_id: user.id,
-        status: 'lobby',
-        join_requires_approval: false,
-        default_buy_in: null,
-        minimum_buy_in: null,
-        maximum_buy_in: null,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        closed_at: null,
-        cancelled_at: null,
-        expected_funds: null,
-        counted_funds: null,
-        discrepancy: null,
-        duration_seconds: null
-      });
-      getState().members.push({
-        id: makeId('m'),
-        session_id: id,
-        user_id: user.id,
-        member_role: 'host',
-        joined_at: new Date().toISOString()
-      });
-      addAudit('session_created', id, user.id, {
-        targetType: 'session',
-        targetId: id,
-        details: { session_code: code }
-      });
-      commit({
-        sessions: [...getState().sessions],
-        members: [...getState().members],
-        auditLogs: [...getState().auditLogs]
-      });
+      if (!name) throw new Error('Table name is required.');
+      const result = await createPokerTable(name);
+      await refreshRemoteActivity({ quiet: true });
       closeActiveModal();
-      navigate(`session/${id}`);
-      showToast(`Table ${code} created.`);
+      navigate(`session/${result.table_id}`);
+      showToast(`Table ${result.session_code} created.`);
     } else if (form.id === 'join-session-form') {
-      const code = String(data.code || '').trim().toUpperCase();
-      const session = getState().sessions.find(item =>
-        item.session_code.toUpperCase() === code && ['lobby', 'active'].includes(item.status)
-      );
-      if (!session) throw new Error('No joinable session matches that code. Try OPEN-2468 or PKR-7F2K.');
-      if (user.account_status !== 'active') throw new Error('Suspended profiles cannot join sessions.');
-
-      if (isMember(session.id, user.id)) {
-        closeActiveModal();
-        navigate(`session/${session.id}`);
-        showToast('You already joined this table.');
-        return;
-      }
-
-      getState().members.push({
-        id: makeId('m'),
-        session_id: session.id,
-        user_id: user.id,
-        member_role: 'player',
-        joined_at: new Date().toISOString()
-      });
-      addNotification(session.host_user_id, 'Player joined', `${user.display_name} joined ${session.name}.`, { type: 'approved', sessionId: session.id });
-      addAudit('player_joined', session.id, user.id, {
-        targetType: 'user',
-        targetId: user.id,
-        details: { user_id: user.id }
-      });
-      commit({
-        members: [...getState().members],
-        notifications: [...getState().notifications],
-        auditLogs: [...getState().auditLogs]
-      });
+      const result = await joinPokerTable(String(data.code || ''));
+      await refreshRemoteActivity({ quiet: true });
       closeActiveModal();
-      navigate(`session/${session.id}`);
-      showToast('You joined the table.');
+      navigate(`session/${result.table_id}`);
+      showToast(result.already_member ? 'You already joined this table.' : 'You joined the table.');
     } else if (form.id === 'request-buyin-form') {
       const session = currentRouteSession(['active']);
       requireMembership(session, user.id);
       validateMoney(data.amount);
-      validateBuyIn(session, Number(data.amount));
-      preventDuplicatePending('buyin', session.id, user.id);
-
-      const request = {
-        id: makeId('br'),
-        session_id: session.id,
-        requester_id: user.id,
-        requested_amount: Number(data.amount),
-        approved_amount: null,
-        note: String(data.note || '').trim(),
-        status: 'pending_payment_confirmation',
-        requested_at: new Date().toISOString(),
-        rejection_reason: '',
-        cancellation_reason: ''
-      };
-      getState().requests.buyin.unshift(request);
-      addNotification(session.host_user_id, 'Cash-in request', `${user.display_name} wants to cash in ${formatCurrency(data.amount)} at ${session.name}.`, {
-        type: 'request',
-        sessionId: session.id,
-        requestId: request.id,
-        requestKind: 'buyin',
-        delivery: 'host_money_queue'
-      });
-      addAudit('buy_in_requested', session.id, user.id, {
-        targetType: 'request',
-        targetId: request.id,
-        details: { player_id: user.id, amount: Number(data.amount) }
-      });
-      commit({
-        requests: cloneRequests(),
-        notifications: [...getState().notifications],
-        auditLogs: [...getState().auditLogs]
-      });
+      await submitMoneyRequest(session.id, 'buyin', Number(data.amount), String(data.note || ''));
+      await refreshRemoteActivity({ quiet: true });
       closeActiveModal();
       showToast('Cash-in request sent.');
     } else if (form.id === 'request-cashout-form') {
       const session = currentRouteSession(['active']);
       requireMembership(session, user.id);
       validateMoney(data.amount);
-      ensureFunds(session.id, Number(data.amount));
-      preventDuplicatePending('cashout', session.id, user.id);
-
-      const request = {
-        id: makeId('cr'),
-        session_id: session.id,
-        requester_id: user.id,
-        requested_amount: Number(data.amount),
-        approved_amount: null,
-        note: '',
-        status: 'pending_review',
-        requested_at: new Date().toISOString(),
-        rejection_reason: '',
-        cancellation_reason: ''
-      };
-      getState().requests.cashout.unshift(request);
-      addNotification(session.host_user_id, 'Cash-out request', `${user.display_name} wants to cash out ${formatCurrency(data.amount)} at ${session.name}.`, {
-        type: 'request',
-        sessionId: session.id,
-        requestId: request.id,
-        requestKind: 'cashout',
-        delivery: 'host_money_queue'
-      });
-      addAudit('cash_out_requested', session.id, user.id, {
-        targetType: 'request',
-        targetId: request.id,
-        details: { player_id: user.id, amount: Number(data.amount) }
-      });
-      commit({
-        requests: cloneRequests(),
-        notifications: [...getState().notifications],
-        auditLogs: [...getState().auditLogs]
-      });
+      await submitMoneyRequest(session.id, 'cashout', Number(data.amount));
+      await refreshRemoteActivity({ quiet: true });
       closeActiveModal();
       showToast('Cash-out request sent.');
     } else if (form.id === 'host-cashin-form') {
       const session = currentRouteSession(['active']);
       requireHost(session, user.id);
-      validateBuyIn(session, Number(data.amount));
-
-      const transaction = addTransaction(session.id, user.id, 'buy_in', data.amount, '', {
-        metadata: { confirmation: 'host_self_recorded' }
-      });
-      addAudit('host_cash_in_confirmed', session.id, user.id, {
-        targetType: 'transaction',
-        targetId: transaction.id,
-        details: { player_id: user.id, amount: Number(data.amount) }
-      });
-      commit({ transactions: [...getState().transactions], auditLogs: [...getState().auditLogs] });
+      validateMoney(data.amount);
+      const result = await recordHostMoney(session.id, 'buyin', Number(data.amount));
+      await refreshRemoteActivity({ quiet: true });
       closeActiveModal();
-      showToast(`Cash-in added. Table money: ${formatCurrency(availableTableFunds(transactionsForSession(session.id)))}`);
+      showToast(`Cash-in added. Table money: ${formatCurrency(Number(result.table_funds_cents || 0) / 100)}`);
     } else if (form.id === 'host-cashout-form') {
       const session = currentRouteSession(['active']);
       requireHost(session, user.id);
       validateMoney(data.amount);
-      ensureFunds(session.id, Number(data.amount));
-
-      const transaction = addTransaction(session.id, user.id, 'cash_out', data.amount, '', {
-        metadata: { confirmation: 'host_self_recorded' }
-      });
-      addAudit('host_cash_out_confirmed', session.id, user.id, {
-        targetType: 'transaction',
-        targetId: transaction.id,
-        details: { player_id: user.id, amount: Number(data.amount) }
-      });
-      commit({ transactions: [...getState().transactions], auditLogs: [...getState().auditLogs] });
+      await recordHostMoney(session.id, 'cashout', Number(data.amount));
+      await refreshRemoteActivity({ quiet: true });
       closeActiveModal();
       showToast('Cash-out saved.');
     } else if (form.id === 'report-session-form') {
       const session = currentRouteSession(['lobby', 'active', 'closed', 'cancelled']);
       requireMembership(session, user.id);
-      const details = String(data.details || '').trim();
-      if (details.length < 10) throw new Error('Add at least 10 characters of detail.');
-
-      const report = {
-        id: makeId('rep'),
-        session_id: session.id,
-        session_name: session.name,
-        session_code: session.session_code,
-        reporter_id: user.id,
-        reporter_name: user.display_name,
-        reason: data.reason,
-        details,
-        status: 'open',
-        resolution_note: '',
-        created_at: new Date().toISOString()
-      };
-      getState().reports.unshift(report);
-      getState().users.filter(item => item.is_admin).forEach(admin =>
-        addNotification(admin.id, 'New session report', `${user.display_name} reported ${session.name}.`)
-      );
-      addAudit('session_reported', session.id, user.id, {
-        targetType: 'report',
-        targetId: report.id,
-        details: { reason: data.reason, session_status: session.status }
-      });
-      commit({
-        reports: [...getState().reports],
-        notifications: [...getState().notifications],
-        auditLogs: [...getState().auditLogs]
-      });
+      await submitSessionReport(session.id, String(data.reason || 'other'), String(data.details || ''));
+      await refreshRemoteActivity({ quiet: true });
       closeActiveModal();
       showToast('Report sent.');
     } else if (form.id === 'close-session-form') {
       const session = currentRouteSession(['active']);
       requireHost(session, user.id);
-
-      const pending = pendingForSession(session.id);
-      if (pending.length) throw new Error(`Resolve ${pending.length} pending request${pending.length === 1 ? '' : 's'} before closing.`);
-
-      const sessionTransactions = transactionsForSession(session.id);
-      const missingPlayers = missingCashoutPlayers(session.id);
-      const expected = availableTableFunds(sessionTransactions);
-      const counted = expected;
-      const closedAt = new Date().toISOString();
-      const durationSeconds = durationSecondsBetween(session.started_at, closedAt);
-      Object.assign(session, {
-        status: 'closed',
-        closed_at: closedAt,
-        duration_seconds: durationSeconds,
-        expected_funds: expected,
-        counted_funds: counted,
-        discrepancy: 0
-      });
-
-      const resultRecipients = [...new Set(membersForSession(session.id).map(member => member.user_id))];
-      resultRecipients.forEach(playerId => {
-        const summary = playerSummary(sessionTransactions, playerId);
-        const resultMessage = summary.net > 0
-          ? `You won ${formatCurrency(summary.net)}.`
-          : summary.net < 0
-            ? `You lost ${formatCurrency(Math.abs(summary.net))}.`
-            : 'You finished even.';
-        addNotification(
-          playerId,
-          'Table finished',
-          `${session.name}: ${resultMessage}`,
-          {
-            type: summary.net > 0 ? 'approved' : summary.net < 0 ? 'rejected' : 'info',
-            sessionId: session.id,
-            delivery: 'final_result',
-            resultSummary: {
-              session_name: session.name,
-              cash_in: summary.buyIn,
-              cash_out: summary.cashOut,
-              net: summary.net,
-              duration_seconds: durationSeconds
-            }
-          }
-        );
-      });
-
-      addAudit('session_closed', session.id, user.id, {
-        targetType: 'session',
-        targetId: session.id,
-        details: {
-          expected_funds: expected,
-          counted_funds: counted,
-          discrepancy: session.discrepancy,
-          duration_seconds: durationSeconds,
-          missing_cashout_user_ids: missingPlayers.map(player => player.id)
-        }
-      });
-      commit({
-        sessions: [...getState().sessions],
-        notifications: [...getState().notifications],
-        auditLogs: [...getState().auditLogs]
-      });
+      await closePokerTable(session.id);
+      await refreshRemoteActivity({ quiet: true });
       closeActiveModal();
       navigate('history');
       showToast('Table ended.');
     } else if (form.id === 'correct-transaction-form') {
-      const transactionSession = sessionByTransactionId(data.transactionId);
-      const transaction = transactionSession
-        ? transactionsForSession(transactionSession.id).find(item => item.id === data.transactionId)
-        : null;
+      const transaction = getState().transactions.find(item => item.id === data.transactionId);
       if (!transaction || transaction.is_reversed || !['buy_in', 'cash_out'].includes(transaction.transaction_type)) {
         throw new Error('This transaction is no longer available for correction.');
       }
-
       const session = sessionById(transaction.session_id);
       requireHost(session, user.id);
-      requireSessionStatus(session, ['active'], 'Transactions can be corrected only while the session is active.');
-
       const reason = String(data.reason || '').trim();
       if (!reason) throw new Error('A correction reason is required.');
-
       const correctedAmount = numberOrNull(data.correctedAmount);
-      if (correctedAmount !== null) {
-        validateMoney(correctedAmount);
-        if (transaction.transaction_type === 'buy_in') validateBuyIn(session, correctedAmount);
-        if (transaction.transaction_type === 'cash_out') ensureCorrectionFunds(session.id, transaction, correctedAmount);
-      }
-
-      const reversal = addTransaction(session.id, transaction.player_id, 'reversal', transaction.amount, reason, {
-        reversesTransactionId: transaction.id,
-        metadata: { original_type: transaction.transaction_type }
-      });
-      let replacement = null;
-      if (correctedAmount !== null) {
-        replacement = addTransaction(
-          session.id,
-          transaction.player_id,
-          transaction.transaction_type,
-          correctedAmount,
-          `Corrected entry: ${reason}`,
-          { metadata: { correction_group_id: reversal.id, replaces_transaction_id: transaction.id } }
-        );
-      }
-
-      addAudit('transaction_corrected', session.id, user.id, {
-        targetType: 'transaction',
-        targetId: transaction.id,
-        details: {
-          original_amount: transaction.amount,
-          corrected_amount: correctedAmount,
-          transaction_type: transaction.transaction_type,
-          reversal_transaction_id: reversal.id,
-          replacement_transaction_id: replacement?.id || null,
-          reason
-        }
-      });
-      commit({ transactions: [...getState().transactions], auditLogs: [...getState().auditLogs] });
+      if (correctedAmount !== null) validateMoney(correctedAmount);
+      await correctPokerTransaction(transaction.id, correctedAmount, reason);
+      await refreshRemoteActivity({ quiet: true });
       closeActiveModal();
       showToast('Money record fixed.');
     } else if (form.id === 'profile-form') {
@@ -1344,16 +1081,54 @@ async function handleAction(event) {
   if (registrationDialog) registrationDialog.querySelectorAll('button').forEach(button => { button.disabled = true; });
 
   try {
-    if (target.dataset.hostMoneyApprove) {
+    if (target.dataset.joinOpenTable) {
+      setButtonBusy(target, true, 'Joining…');
+      const result = await joinPokerTable(target.dataset.joinOpenTable);
+      await refreshRemoteActivity({ quiet: true });
+      navigate(`session/${result.table_id}`);
+      showToast(result.already_member ? 'You already joined this table.' : 'You joined the table.');
+    } else if (target.hasAttribute('data-start-session')) {
+      const session = currentRouteSession(['lobby']);
+      requireHost(session, user.id);
+      await startPokerTable(session.id);
+      await refreshRemoteActivity({ quiet: true });
+      showToast('Table started.');
+    } else if (target.hasAttribute('data-cancel-session')) {
+      const session = currentRouteSession(['lobby', 'active']);
+      requireHost(session, user.id);
+      const accepted = await confirmDialog({
+        title: 'Cancel this table?',
+        message: 'The table will be marked Cancelled and all waiting requests will be cancelled.',
+        confirmText: 'Cancel table',
+        destructive: true
+      });
+      if (!accepted) return;
+      await cancelPokerTable(session.id);
+      await refreshRemoteActivity({ quiet: true });
+      navigate('sessions');
+      showToast('Table cancelled.');
+    } else if (target.dataset.copyCode) {
+      await copyText(target.dataset.copyCode);
+      showToast('Table code copied.');
+    } else if (target.hasAttribute('data-export-session')) {
+      const session = currentRouteSession(['lobby', 'active', 'closed', 'cancelled']);
+      requireHost(session, user.id);
+      exportCsv(session, transactionsForSession(session.id));
+      showToast('CSV exported.');
+    } else if (target.dataset.cancelBuyin || target.dataset.cancelCashout) {
+      const requestId = target.dataset.cancelBuyin || target.dataset.cancelCashout;
+      await cancelMoneyRequest(requestId);
+      await refreshRemoteActivity({ quiet: true });
+      showToast('Request cancelled.');
+    } else if (target.dataset.hostMoneyApprove) {
       const requestId = target.dataset.hostMoneyApprove;
       const requestKind = target.dataset.requestKind === 'cashout' ? 'cashout' : 'buyin';
-      const requestList = requestKind === 'buyin' ? getState().requests.buyin : getState().requests.cashout;
-      const request = requestList.find(item => item.id === requestId);
-      if (!request) throw new Error(`This ${requestKind === 'buyin' ? 'cash-in' : 'cash-out'} request no longer exists.`);
-      setHostQueueBusy(target.closest('#host-money-queue-modal'), true);
-      approveMoneyRequest(requestKind, requestId, Number(request.requested_amount));
+      const dialog = target.closest('#host-money-queue-modal');
+      setHostQueueBusy(dialog, true);
+      const result = await reviewMoneyRequest(requestId, true);
+      await refreshRemoteActivity({ quiet: true });
       closeHostMoneyApprovalDialog(requestId);
-      showToast(`${requestKind === 'buyin' ? 'Cash-in' : 'Cash-out'} approved. Table money: ${formatCurrency(availableTableFunds(transactionsForSession(request.session_id)))}`);
+      showToast(`${requestKind === 'buyin' ? 'Cash-in' : 'Cash-out'} approved. Table money: ${formatCurrency(Number(result.table_funds_cents || 0) / 100)}`);
       requestAnimationFrame(() => syncHostMoneyApprovalQueue(currentUser()));
     } else if (target.dataset.hostMoneyReject) {
       const requestId = target.dataset.hostMoneyReject;
@@ -1361,7 +1136,8 @@ async function handleAction(event) {
       const dialog = target.closest('#host-money-queue-modal');
       const reason = String(dialog?.querySelector('[name="hostQueueRejectReason"]')?.value || '').trim() || 'Rejected by host';
       setHostQueueBusy(dialog, true);
-      rejectRequest(requestKind, requestId, reason);
+      await reviewMoneyRequest(requestId, false, reason);
+      await refreshRemoteActivity({ quiet: true });
       closeHostMoneyApprovalDialog(requestId);
       showToast(`${requestKind === 'buyin' ? 'Cash-in' : 'Cash-out'} rejected.`);
       requestAnimationFrame(() => syncHostMoneyApprovalQueue(currentUser()));
@@ -1385,19 +1161,8 @@ async function handleAction(event) {
       });
       if (!accepted) return;
 
-      const cancelled = cancelPendingForMember(session.id, playerId, 'Removed by host', user.id);
-      addNotification(playerId, 'Removed from table', `You were removed from ${session.name}. Pending requests were cancelled.`);
-      addAudit('player_removed', session.id, user.id, {
-        targetType: 'user',
-        targetId: playerId,
-        details: { user_id: playerId, cancelled_request_ids: cancelled }
-      });
-      commit({
-        members: getState().members.filter(member => !(member.session_id === session.id && member.user_id === playerId)),
-        requests: cloneRequests(),
-        notifications: [...getState().notifications],
-        auditLogs: [...getState().auditLogs]
-      });
+      await removeTableMember(session.id, playerId);
+      await refreshRemoteActivity({ quiet: true });
       closeMemberMenus();
       showToast('Player removed.');
     } else if (target.dataset.transferHost) {
@@ -1415,29 +1180,8 @@ async function handleAction(event) {
       });
       if (!accepted) return;
 
-      const previousHostId = session.host_user_id;
-      session.host_user_id = nextHostId;
-      const members = getState().members.map(member =>
-        member.session_id !== session.id
-          ? member
-          : member.user_id === previousHostId
-            ? { ...member, member_role: 'player' }
-            : member.user_id === nextHostId
-              ? { ...member, member_role: 'host' }
-              : member
-      );
-      addNotification(nextHostId, 'You are now the host', `${user.display_name} transferred ${session.name} to you.`, { type: 'approved', sessionId: session.id });
-      addAudit('host_transferred', session.id, user.id, {
-        targetType: 'user',
-        targetId: nextHostId,
-        details: { previous_host_id: previousHostId, new_host_id: nextHostId }
-      });
-      commit({
-        sessions: [...getState().sessions],
-        members,
-        notifications: [...getState().notifications],
-        auditLogs: [...getState().auditLogs]
-      });
+      await transferTableHost(session.id, nextHostId);
+      await refreshRemoteActivity({ quiet: true });
       closeMemberMenus();
       showToast('New host saved.');
     } else if (target.dataset.adminRegistrationApprove) {
@@ -1478,7 +1222,9 @@ async function handleAction(event) {
       if (!targetUser) throw new Error('Account not found.');
       const hasTableHistory = getState().sessions.some(session => session.host_user_id === targetUserId) ||
         getState().members.some(member => member.user_id === targetUserId) ||
-        getState().transactions.some(transaction => transaction.player_id === targetUserId);
+        getState().transactions.some(transaction => transaction.player_id === targetUserId) ||
+        getState().reports.some(report => report.reporter_id === targetUserId) ||
+        (getState().sessionResults || []).some(result => result.user_id === targetUserId);
       if (hasTableHistory) throw new Error('This user has table history. Suspend the account instead so old results stay correct.');
       const accepted = await confirmDialog({
         title: `Delete ${targetUser.display_name}?`,
@@ -1489,7 +1235,7 @@ async function handleAction(event) {
       if (!accepted) return;
       await runAdminAccountAction('delete_user', { userId: targetUserId });
       await refreshRemoteProfiles({ routeAfterApproval: false });
-      commit({ notifications: getState().notifications.filter(item => item.user_id !== targetUserId && item.request_id !== targetUserId) });
+      await refreshRemoteActivity({ quiet: true });
       showToast('Account deleted.');
     } else if (target.dataset.reviewReport) {
       if (!user.is_admin) throw new Error('Admin only.');
@@ -1499,19 +1245,8 @@ async function handleAction(event) {
       const note = (prompt(status === 'reviewing' ? 'Optional review note:' : 'Resolution note:') || '').trim();
       if (status !== 'reviewing' && !note) return;
 
-      report.status = status;
-      report.resolution_note = note || 'Under review';
-      addNotification(report.reporter_id, 'Report updated', `${report.session_name}: ${report.resolution_note}`);
-      addAudit(`report_${status}`, report.session_id, user.id, {
-        targetType: 'report',
-        targetId: report.id,
-        details: { status, resolution_note: report.resolution_note }
-      });
-      commit({
-        reports: [...getState().reports],
-        notifications: [...getState().notifications],
-        auditLogs: [...getState().auditLogs]
-      });
+      await reviewSessionReport(report.id, status, note || 'Under review');
+      await refreshRemoteActivity({ quiet: true });
       showToast('Report status updated.');
     } else if (target.dataset.adminStatus) {
       if (!user.is_admin) throw new Error('Admin only.');
@@ -1539,6 +1274,7 @@ async function handleAction(event) {
     }
   } catch (error) {
     console.error(error);
+    if (target?.dataset?.joinOpenTable) setButtonBusy(target, false);
     const queueDialog = target?.closest?.('#host-money-queue-modal');
     if (queueDialog) {
       setHostQueueBusy(queueDialog, false);
@@ -1560,196 +1296,6 @@ async function handleAction(event) {
       return;
     }
     showToast(error.message || 'Something went wrong.', 'error', 5000);
-  }
-}
-
-function reviewJoin(requestId, approve, reason = '') {
-  const request = getState().requests.join.find(item => item.id === requestId);
-  if (!request || !request.status?.startsWith('pending')) throw new Error('This join request is no longer pending.');
-  const session = sessionById(request.session_id);
-  requireHost(session, currentUser().id);
-  requireSessionStatus(session, ['lobby', 'active'], 'This session no longer accepts join approvals.');
-
-  const requester = userById(request.user_id);
-  if (approve && (!requester || requester.account_status !== 'active')) throw new Error('This player is not eligible to join.');
-
-  request.status = approve ? 'approved' : 'rejected';
-  request.rejection_reason = reason;
-  if (approve && !isMember(session.id, request.user_id)) {
-    getState().members.push({
-      id: makeId('m'),
-      session_id: session.id,
-      user_id: request.user_id,
-      member_role: 'player',
-      joined_at: new Date().toISOString()
-    });
-  }
-
-  addNotification(
-    request.user_id,
-    approve ? 'Join approved' : 'Join rejected',
-    approve ? `You can now open ${session.name}.` : `${session.name}: ${reason}`,
-    { type: approve ? 'approved' : 'rejected', sessionId: session.id }
-  );
-  addAudit(approve ? 'join_approved' : 'join_rejected', session.id, currentUser().id, {
-    targetType: 'request',
-    targetId: request.id,
-    details: { user_id: request.user_id, reason }
-  });
-  commit({
-    requests: cloneRequests(),
-    members: [...getState().members],
-    notifications: [...getState().notifications],
-    auditLogs: [...getState().auditLogs]
-  });
-}
-
-function approveMoneyRequest(kind, id, amount) {
-  const list = kind === 'buyin' ? getState().requests.buyin : getState().requests.cashout;
-  const request = list.find(item => item.id === id);
-  if (!request || !request.status?.startsWith('pending')) throw new Error('This request is no longer pending.');
-
-  const session = sessionById(request.session_id);
-  requireHost(session, currentUser().id);
-  requireSessionStatus(session, ['active'], 'Money requests can be approved only during an active session.');
-  if (!isMember(session.id, request.requester_id)) throw new Error('The requester is no longer a member. Reject or cancel this request instead.');
-
-  if (kind === 'buyin') {
-    validateBuyIn(session, amount);
-  } else {
-    if (toCents(amount) !== toCents(request.requested_amount)) throw new Error('Cash-out approval must use the requested amount.');
-    ensureFunds(session.id, amount);
-  }
-
-  request.status = 'approved';
-  request.approved_amount = amount;
-  const transaction = addTransaction(
-    session.id,
-    request.requester_id,
-    kind === 'buyin' ? 'buy_in' : 'cash_out',
-    amount,
-    '',
-    {
-      requestId: request.id,
-      metadata: { requested_amount: request.requested_amount }
-    }
-  );
-
-  markRequestNotificationRead(request.id, session.host_user_id);
-  addNotification(
-    request.requester_id,
-    `${kind === 'buyin' ? 'Cash-in' : 'Cash-out'} approved`,
-    `${formatCurrency(amount)} was approved for ${session.name}.`,
-    { type: 'approved', sessionId: session.id }
-  );
-  addAudit(`${kind}_approved`, session.id, currentUser().id, {
-    targetType: 'transaction',
-    targetId: transaction.id,
-    details: {
-      request_id: request.id,
-      player_id: request.requester_id,
-      requested_amount: request.requested_amount,
-      approved_amount: amount
-    }
-  });
-  commit({
-    requests: cloneRequests(),
-    transactions: [...getState().transactions],
-    notifications: [...getState().notifications],
-    auditLogs: [...getState().auditLogs]
-  });
-}
-
-function rejectRequest(kind, id, reason) {
-  const list = kind === 'buyin' ? getState().requests.buyin : getState().requests.cashout;
-  const request = list.find(item => item.id === id);
-  if (!request || !request.status?.startsWith('pending')) throw new Error('This request is no longer pending.');
-  const session = sessionById(request.session_id);
-  requireHost(session, currentUser().id);
-
-  request.status = 'rejected';
-  request.rejection_reason = reason;
-  markRequestNotificationRead(request.id, session.host_user_id);
-  addNotification(
-    request.requester_id,
-    `${kind === 'buyin' ? 'Cash-in' : 'Cash-out'} rejected`,
-    `${session.name}: ${reason}`,
-    { type: 'rejected', sessionId: session.id }
-  );
-  addAudit(`${kind}_rejected`, session.id, currentUser().id, {
-    targetType: 'request',
-    targetId: request.id,
-    details: { player_id: request.requester_id, reason }
-  });
-  commit({
-    requests: cloneRequests(),
-    notifications: [...getState().notifications],
-    auditLogs: [...getState().auditLogs]
-  });
-}
-
-function cancelRequest(kind, id) {
-  const key = kind === 'join' ? 'join' : kind === 'buyin' ? 'buyin' : 'cashout';
-  const request = getState().requests[key].find(item => item.id === id);
-  if (!request || !request.status?.startsWith('pending')) throw new Error('This request is no longer pending.');
-  if ((request.requester_id || request.user_id) !== currentUser().id) throw new Error('You can cancel only your own request.');
-
-  request.status = 'cancelled';
-  request.cancellation_reason = 'Cancelled by requester';
-  request.cancelled_at = new Date().toISOString();
-  addAudit(`${key}_cancelled`, request.session_id, currentUser().id, {
-    targetType: 'request',
-    targetId: request.id,
-    details: { reason: request.cancellation_reason }
-  });
-  commit({ requests: cloneRequests(), auditLogs: [...getState().auditLogs] });
-}
-
-function cancelPendingForMember(sessionId, userId, reason, actorId) {
-  const cancelledIds = [];
-  const groups = [
-    ['join', getState().requests.join],
-    ['buyin', getState().requests.buyin],
-    ['cashout', getState().requests.cashout]
-  ];
-
-  for (const [kind, list] of groups) {
-    for (const request of list) {
-      const requesterId = request.requester_id || request.user_id;
-      if (request.session_id !== sessionId || requesterId !== userId || !request.status?.startsWith('pending')) continue;
-      request.status = 'cancelled';
-      request.cancellation_reason = reason;
-      request.cancelled_at = new Date().toISOString();
-      cancelledIds.push(request.id);
-      addAudit(`${kind}_auto_cancelled`, sessionId, actorId, {
-        targetType: 'request',
-        targetId: request.id,
-        details: { user_id: userId, reason }
-      });
-    }
-  }
-
-  if (cancelledIds.length && actorId !== userId) {
-    addNotification(userId, 'Pending requests cancelled', `${cancelledIds.length} pending request${cancelledIds.length === 1 ? '' : 's'} were cancelled: ${reason}.`);
-  }
-  return cancelledIds;
-}
-
-function cancelAllPendingForSession(sessionId, reason, actorId) {
-  const requests = getState().requests;
-  for (const [kind, list] of Object.entries(requests)) {
-    list.forEach(request => {
-      if (request.session_id !== sessionId || !request.status?.startsWith('pending')) return;
-      request.status = 'cancelled';
-      request.cancellation_reason = reason;
-      request.cancelled_at = new Date().toISOString();
-      addNotification(request.requester_id || request.user_id, 'Request cancelled', reason);
-      addAudit(`${kind}_auto_cancelled`, sessionId, actorId, {
-        targetType: 'request',
-        targetId: request.id,
-        details: { reason }
-      });
-    });
   }
 }
 
@@ -1811,43 +1357,10 @@ function pendingForSession(sessionId) {
     .filter(request => request.session_id === sessionId && request.status?.startsWith('pending'));
 }
 
-function preventDuplicatePending(kind, sessionId, userId) {
-  const list = kind === 'buyin' ? getState().requests.buyin : getState().requests.cashout;
-  if (list.some(request =>
-    request.session_id === sessionId && request.requester_id === userId && request.status?.startsWith('pending')
-  )) throw new Error(`Resolve or cancel your existing ${kind === 'buyin' ? 'cash-in' : 'cash-out'} request first.`);
-}
-
-function missingCashoutPlayers(sessionId) {
-  const transactions = transactionsForSession(sessionId);
-  return membersForSession(sessionId)
-    .map(member => ({ ...member.profile, summary: playerSummary(transactions, member.user_id) }))
-    .filter(player => player.id && player.summary.buyIn > 0 && player.summary.cashOut === 0);
-}
-
 function validateMoney(value) {
   const error = validAmount(value, { min: 0.01, label: 'Amount' });
   if (error) throw new Error(error);
   if (toCents(value) <= 0) throw new Error('Amount must be greater than zero.');
-}
-
-function validateBuyIn(_session, amount) {
-  validateMoney(amount);
-}
-
-function ensureFunds(sessionId, amount) {
-  const funds = availableTableFunds(transactionsForSession(sessionId));
-  if (toCents(amount) > toCents(funds)) {
-    throw new Error(`Cash-out cannot exceed the ${formatCurrency(funds)} currently available.`);
-  }
-}
-
-function ensureCorrectionFunds(sessionId, originalTransaction, correctedAmount) {
-  const currentFunds = availableTableFunds(transactionsForSession(sessionId));
-  const projectedAvailable = currentFunds + Number(originalTransaction.amount);
-  if (toCents(correctedAmount) > toCents(projectedAvailable)) {
-    throw new Error(`Corrected cash-out cannot exceed the projected ${formatCurrency(projectedAvailable)} available after reversing the original entry.`);
-  }
 }
 
 function numberOrNull(value) {
@@ -1855,11 +1368,6 @@ function numberOrNull(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) throw new Error('Enter a valid number.');
   return number;
-}
-
-function sessionByTransactionId(transactionId) {
-  const transaction = getState().transactions.find(item => item.id === transactionId);
-  return transaction ? sessionById(transaction.session_id) : null;
 }
 
 function openModal(type, context = {}) {
