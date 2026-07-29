@@ -1,0 +1,7 @@
+project_id = "pokerat"
+
+[functions.username-login]
+verify_jwt = false
+
+[functions.admin-account]
+verify_jwt = true

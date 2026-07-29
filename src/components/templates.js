@@ -68,7 +68,7 @@ export function initialAdminSetupView() {
     </main>`;
 }
 
-export function accountAccessView({ mode = 'login' } = {}) {
+export function accountAccessView({ mode = 'login', profile = null } = {}) {
   const brand = `<div class="simple-brand"><span class="brand-mark">P</span><div><strong>POKERAT</strong><small>PRIVATE TABLES</small></div></div>`;
 
   if (mode === 'register') {
@@ -96,10 +96,25 @@ export function accountAccessView({ mode = 'login' } = {}) {
         <section class="access-card auth-card system-window auth-status-card">
           ${brand}
           <span class="auth-status-icon">⌛</span>
-          <span class="system-tag">REQUEST SENT</span>
+          <span class="system-tag">WAITING</span>
           <h1>Waiting for approval</h1>
-          <p>An admin must approve your account before you can log in.</p>
-          <a class="button button--primary" href="#/login">Back to login</a>
+          <p>${profile ? `Your account <strong>@${escapeHtml(profile.login_name || '')}</strong> is waiting for an admin.` : 'An admin must approve your account before you can enter.'}</p>
+          <p class="muted">This screen updates automatically after the admin decides.</p>
+          ${profile ? '<button class="button button--ghost" data-logout type="button">Log out</button>' : '<a class="button button--primary" href="#/login">Back to login</a>'}
+        </section>
+      </main>`;
+  }
+
+  if (mode === 'rejected') {
+    return `
+      <main class="access-screen">
+        <section class="access-card auth-card system-window auth-status-card">
+          ${brand}
+          <span class="auth-status-icon">×</span>
+          <span class="system-tag">NOT APPROVED</span>
+          <h1>Registration rejected</h1>
+          <p>${profile?.status_note ? escapeHtml(profile.status_note) : 'Ask an admin if you believe this was a mistake.'}</p>
+          <button class="button button--ghost" data-logout type="button">Log out</button>
         </section>
       </main>`;
   }
@@ -111,7 +126,7 @@ export function accountAccessView({ mode = 'login' } = {}) {
         <div class="access-copy"><span class="system-tag">SYSTEM ONLINE</span><h1>Welcome back</h1><p>Enter your username or email and password.</p></div>
         <form id="login-form" class="stack auth-form">
           <label>Username or email<input name="identifier" maxlength="254" required autocomplete="username" placeholder="Username or email" autofocus></label>
-          <label>Password<input name="password" type="password" minlength="6" maxlength="64" required autocomplete="current-password" placeholder="Your password"></label>
+          <label>Password<input name="password" type="password" minlength="8" maxlength="64" required autocomplete="current-password" placeholder="Your password"></label>
           <label class="remember-row"><input name="remember" type="checkbox"><span><strong>Remember me</strong><small>Do not use this on a shared device.</small></span></label>
           ${formError()}
           <button class="button button--primary" type="submit">Log in</button>
@@ -129,9 +144,8 @@ export function forcePasswordChangeView(profile) {
     <main class="access-screen">
       <section class="access-card auth-card system-window">
         <div class="simple-brand"><span class="brand-mark">P</span><div><strong>POKERAT</strong><small>PASSWORD RESET</small></div></div>
-        <div class="access-copy"><span class="system-tag">ONE LAST STEP</span><h1>Update your account</h1><p>${escapeHtml(profile?.display_name || 'Player')}, confirm your email and choose a new password.</p></div>
+        <div class="access-copy"><span class="system-tag">ONE LAST STEP</span><h1>Choose a new password</h1><p>${escapeHtml(profile?.display_name || 'Player')}, replace the temporary password before continuing.</p></div>
         <form id="forced-password-change-form" class="stack auth-form">
-          <label>Email<input name="email" type="email" maxlength="254" required autocomplete="email" value="${escapeHtml(profile?.email || '')}" placeholder="you@example.com"></label>
           <label>New password<input name="password" type="password" minlength="8" maxlength="64" required autocomplete="new-password" placeholder="At least 8 characters" autofocus></label>
           <label>Confirm password<input name="confirmPassword" type="password" minlength="8" maxlength="64" required autocomplete="new-password" placeholder="Repeat password"></label>
           ${formError()}
@@ -471,7 +485,7 @@ export function adminView(users = [], logs = [], reports = [], activeAdminId = '
     </section>
     <section class="section-block">
       <div class="section-heading"><h2>Registered users</h2><span>${registeredUsers.length}</span></div>
-      <div class="user-list">${registeredUsers.map(user => `<article class="user-row"><span class="avatar">${initials(user.display_name)}</span><div><strong>${escapeHtml(user.display_name)}</strong><small>@${escapeHtml(user.login_name || '')} · ${escapeHtml(user.email || 'No email')} · ${accountStatusLabel(user.account_status)}${!user.password_hash ? ' · Password reset needed' : user.must_change_password ? ' · Temporary password' : ''}</small></div><div class="user-row__actions">${adminUserActions(user, activeAdminId)}</div></article>`).join('')}</div>
+      <div class="user-list">${registeredUsers.map(user => `<article class="user-row"><span class="avatar">${initials(user.display_name)}</span><div><strong>${escapeHtml(user.display_name)}</strong><small>@${escapeHtml(user.login_name || '')} · ${escapeHtml(user.email || 'No email')} · ${accountStatusLabel(user.account_status)}${user.must_change_password ? ' · Temporary password' : ''}</small></div><div class="user-row__actions">${adminUserActions(user, activeAdminId)}</div></article>`).join('')}</div>
     </section>
     <section class="section-block">
       <div class="section-heading"><h2>Data</h2><span>Admin only</span></div>
@@ -554,7 +568,7 @@ function notificationList(notifications) {
 }
 
 export function suspendedView(profile) {
-  return `<main class="access-screen"><section class="access-card auth-card system-window auth-status-card"><span class="brand-mark">P</span><span class="auth-status-icon">!</span><h1>Account suspended</h1><p>${escapeHtml(profile?.display_name || 'Player')}, ask an admin to restore your account.</p><button data-logout class="button button--primary">Log out</button></section></main>`;
+  return `<main class="access-screen"><section class="access-card auth-card system-window auth-status-card"><span class="brand-mark">P</span><span class="auth-status-icon">!</span><h1>Account suspended</h1><p>${profile?.status_note ? escapeHtml(profile.status_note) : `${escapeHtml(profile?.display_name || 'Player')}, ask an admin to restore your account.`}</p><button data-logout class="button button--primary">Log out</button></section></main>`;
 }
 
 export function emptyState(title, description, buttonLabel = '', openType = '') {

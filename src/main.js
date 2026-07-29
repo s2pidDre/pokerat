@@ -22,7 +22,8 @@ import { availableTableFunds, playerSummary, toCents } from './utils/accounting.
 import { durationSecondsBetween, escapeHtml, formatCurrency, formatDuration, formatDurationSeconds } from './utils/format.js';
 import { buildClosedTableLeaderboard } from './utils/leaderboard.js';
 import { validAmount } from './utils/validation.js';
-import { clearAuthSession, clearLoginAttempts, createPasswordSalt, getAuthSessionUserId, getLoginLock, hashPassword, normalizeEmail, normalizeLoginIdentifier, normalizeUsername, recordFailedLogin, setAuthSession, validateDisplayName, validateEmail, validatePassword, validateUsername, verifyPassword } from './utils/auth.js';
+import { clearLoginAttempts, getLoginLock, normalizeLoginIdentifier, recordFailedLogin, validateDisplayName, validateEmail, validatePassword } from './utils/auth.js';
+import { changeOwnPassword, completeForcedPasswordChange, createFirstAdministrator, getCurrentProfile, getSession, getVisibleProfiles, hasActiveAdministrator, loginAccount, logoutAccount, onAuthStateChange, registerAccount, runAdminAccountAction, subscribeToProfiles, unsubscribeFromProfiles, updateOwnProfile } from './lib/account-service.js';
 
 const app = document.getElementById('app');
 let renderQueued = false;
@@ -436,8 +437,9 @@ function generateCode() {
   return `PKR-${value}`;
 }
 
-function signOut(message = '') {
-  clearAuthSession();
+async function signOut(message = '') {
+  await logoutAccount();
+  unsubscribeFromProfiles();
   closeActiveModal();
   closeAdminRegistrationApprovalDialog();
   closeHostMoneyApprovalDialog();
@@ -448,52 +450,41 @@ function signOut(message = '') {
   if (message) requestAnimationFrame(() => showToast(message));
 }
 
-function userByLoginIdentifier(value) {
-  const identifier = normalizeLoginIdentifier(value);
-  if (!identifier) return null;
-  return getState().users.find(user => identifier.includes('@')
-    ? normalizeEmail(user.email) === identifier
-    : normalizeUsername(user.login_name) === identifier) || null;
+function mergeRemoteProfiles(remoteProfiles, currentProfile = null) {
+  const localUsers = getState().users || [];
+  const byId = new Map(localUsers.map(user => [user.id, user]));
+  for (const profile of remoteProfiles || []) {
+    byId.set(profile.id, { ...(byId.get(profile.id) || {}), ...profile });
+  }
+  if (currentProfile) byId.set(currentProfile.id, { ...(byId.get(currentProfile.id) || {}), ...currentProfile });
+  return [...byId.values()];
 }
 
+async function refreshRemoteProfiles({ routeAfterApproval = true } = {}) {
+  const profile = await getCurrentProfile();
+  if (!profile) {
+    unsubscribeFromProfiles();
+    setState({ currentUserId: null });
+    persistState();
+    return null;
+  }
+  const previous = currentUser();
+  const visibleProfiles = await getVisibleProfiles(profile);
+  const users = profile.is_admin ? visibleProfiles : mergeRemoteProfiles(visibleProfiles, profile);
+  setState({ users, currentUserId: profile.id });
+  persistState();
 
-function ensureUniqueLoginName(value, exceptUserId = '') {
-  const loginName = normalizeUsername(value);
-  const duplicate = getState().users.some(user => user.id !== exceptUserId && normalizeUsername(user.login_name) === loginName);
-  if (duplicate) throw new Error('That username is already used.');
-  return loginName;
+  if (routeAfterApproval && previous?.account_status === 'pending' && profile.account_status === 'active') {
+    navigate(defaultRouteForUser(profile));
+    triggerHapticFeedback('approved', { force: true });
+    showToast('Your account was approved.');
+  }
+  return profile;
 }
 
-function ensureUniqueEmail(value, exceptUserId = '') {
-  const email = normalizeEmail(value);
-  const duplicate = getState().users.some(user => user.id !== exceptUserId && normalizeEmail(user.email) === email);
-  if (duplicate) throw new Error('That email is already registered.');
-  return email;
-}
-
-function notifyAdminsOfRegistration(applicant) {
-  getState().users
-    .filter(user => user.is_admin && user.account_status === 'active')
-    .forEach(admin => addNotification(
-      admin.id,
-      'New account request',
-      `${applicant.display_name} is waiting for approval.`,
-      {
-        type: 'request',
-        actionHash: '#/admin',
-        requestId: applicant.id,
-        requestKind: 'registration',
-        delivery: 'admin_registration_queue'
-      }
-    ));
-}
-
-function markRegistrationNotificationsRead(userId) {
-  const now = new Date().toISOString();
-  getState().notifications.forEach(notification => {
-    if (notification.request_kind === 'registration' && notification.request_id === userId && !notification.read_at) {
-      notification.read_at = now;
-    }
+function startProfileRealtime() {
+  subscribeToProfiles(() => {
+    window.setTimeout(() => refreshRemoteProfiles().catch(error => console.error('Profile refresh failed:', error)), 0);
   });
 }
 
@@ -505,7 +496,7 @@ function render() {
     return;
   }
 
-  const hasAdministrator = state.users.some(user => user.is_admin && user.account_status === 'active');
+  const hasAdministrator = Boolean(state.meta?.hasActiveAdministrator || state.users.some(user => user.is_admin && user.account_status === 'active'));
   if (!hasAdministrator) {
     app.innerHTML = initialAdminSetupView();
     return;
@@ -516,6 +507,16 @@ function render() {
     const authRoute = parseRoute(state.route).page;
     const mode = ['register', 'pending'].includes(authRoute) ? authRoute : 'login';
     app.innerHTML = accountAccessView({ mode });
+    return;
+  }
+
+  if (user.account_status === 'pending') {
+    app.innerHTML = accountAccessView({ mode: 'pending', profile: user });
+    return;
+  }
+
+  if (user.account_status === 'rejected') {
+    app.innerHTML = accountAccessView({ mode: 'rejected', profile: user });
     return;
   }
 
@@ -606,28 +607,76 @@ function render() {
   });
 }
 
-function bootstrap() {
+async function bootstrap() {
   document.documentElement.dataset.theme = localStorage.getItem('pokerat-theme') || 'dark';
   const data = loadAppData();
   data.notifications.forEach(notification => surfacedNotificationIds.add(notification.id));
-  const hasAdministrator = data.users.some(user => user.is_admin && user.account_status === 'active');
-  const authenticatedUserId = hasAdministrator ? getAuthSessionUserId() : null;
-  const authenticatedUser = data.users.find(user => user.id === authenticatedUserId && ['active', 'suspended'].includes(user.account_status)) || null;
-  if (!authenticatedUser) clearAuthSession();
-  data.currentUserId = authenticatedUser?.id || null;
-  setState({ ...data, loading: false });
-  if (!hasAdministrator) {
-    history.replaceState(null, '', '#/setup');
-  } else if (authenticatedUser) {
-    const preferredRoute = defaultRouteForUser(authenticatedUser);
-    if (preferredRoute.startsWith('session/') || !location.hash || ['login', 'register', 'pending', 'setup'].includes(parseRoute(location.hash).page)) {
-      history.replaceState(null, '', `#/${preferredRoute}`);
+  setState({ ...data, loading: true });
+
+  try {
+    const [hasAdministrator, session] = await Promise.all([
+      hasActiveAdministrator(),
+      getSession()
+    ]);
+    data.meta = { ...(data.meta || {}), hasActiveAdministrator: hasAdministrator };
+
+    let authenticatedProfile = null;
+    let users = data.users || [];
+    if (session) {
+      authenticatedProfile = await getCurrentProfile();
+      if (authenticatedProfile) {
+        const visibleProfiles = await getVisibleProfiles(authenticatedProfile);
+        users = authenticatedProfile.is_admin ? visibleProfiles : mergeRemoteProfiles(visibleProfiles, authenticatedProfile);
+      }
     }
-  } else if (!['login', 'register', 'pending'].includes(parseRoute(location.hash).page)) {
+
+    data.users = users;
+    data.currentUserId = authenticatedProfile?.id || null;
+    setState({ ...data, loading: false });
+
+    if (!hasAdministrator) {
+      history.replaceState(null, '', '#/setup');
+    } else if (authenticatedProfile) {
+      startProfileRealtime();
+      const preferredRoute = authenticatedProfile.account_status === 'active'
+        ? defaultRouteForUser(authenticatedProfile)
+        : authenticatedProfile.account_status;
+      if (authenticatedProfile.account_status === 'active') {
+        if (preferredRoute.startsWith('session/') || !location.hash || ['login', 'register', 'pending', 'rejected', 'setup'].includes(parseRoute(location.hash).page)) {
+          history.replaceState(null, '', `#/${preferredRoute}`);
+        }
+      } else {
+        history.replaceState(null, '', `#/${preferredRoute}`);
+      }
+    } else if (!['login', 'register'].includes(parseRoute(location.hash).page)) {
+      history.replaceState(null, '', '#/login');
+    }
+  } catch (error) {
+    console.error('Supabase startup failed:', error);
+    data.meta = { ...(data.meta || {}), storage_notice: 'Could not connect to Supabase. Check the SQL setup and internet connection.' };
+    data.currentUserId = null;
+    setState({ ...data, loading: false });
     history.replaceState(null, '', '#/login');
   }
+
   initRouter(queueRender);
   bindEvents();
+  onAuthStateChange((event) => {
+    if (event === 'SIGNED_OUT') {
+      unsubscribeFromProfiles();
+      setState({ currentUserId: null });
+      persistState();
+      queueRender();
+      return;
+    }
+    if (['SIGNED_IN', 'TOKEN_REFRESHED', 'USER_UPDATED'].includes(event)) {
+      window.setTimeout(() => {
+        refreshRemoteProfiles({ routeAfterApproval: false })
+          .then(() => startProfileRealtime())
+          .catch(error => console.error('Auth refresh failed:', error));
+      }, 0);
+    }
+  });
 
   if (data.meta?.storage_notice) {
     requestAnimationFrame(() => showToast(data.meta.storage_notice, 'error', 6500));
@@ -689,9 +738,12 @@ function bindEvents() {
       closeAdminRegistrationApprovalDialog();
       closeHostMoneyApprovalDialog();
       surfacedNotificationIds.clear();
+      await runAdminAccountAction('hard_reset');
+      await logoutAccount().catch(() => {});
+      unsubscribeFromProfiles();
       const fresh = resetAppData();
-      clearAuthSession();
       fresh.currentUserId = null;
+      fresh.meta = { ...(fresh.meta || {}), hasActiveAdministrator: false };
       setState({ ...fresh, loading: false, error: '' });
       persistState();
       navigate('setup');
@@ -786,57 +838,20 @@ async function handleSubmit(event) {
     setButtonBusy(button, true);
 
     if (form.id === 'initial-admin-form') {
-      if (getState().users.some(user => user.is_admin && user.account_status === 'active')) {
-        throw new Error('An administrator already exists.');
-      }
-      const username = normalizeUsername(data.username);
-      const usernameError = validateUsername(String(data.username || ''));
-      if (usernameError) throw new Error(usernameError);
-      const loginName = ensureUniqueLoginName(username);
-      const emailError = validateEmail(String(data.email || ''));
-      if (emailError) throw new Error(emailError);
-      const email = ensureUniqueEmail(data.email);
-      const displayName = username;
-      const password = String(data.password || '');
-      const confirmPassword = String(data.confirmPassword || '');
-      const passwordError = validatePassword(password);
-      if (passwordError) throw new Error(passwordError);
-      if (password !== confirmPassword) throw new Error('The passwords do not match.');
-
-      const passwordSalt = createPasswordSalt();
-      const passwordHash = await hashPassword(password, passwordSalt);
-      const now = new Date().toISOString();
-      const administrator = {
-        id: makeId('u'),
-        display_name: displayName,
-        login_name: loginName,
-        email,
-        account_status: 'active',
-        is_admin: true,
-        password_salt: passwordSalt,
-        password_hash: passwordHash,
-        password_format: 'password',
-        must_change_password: false,
-        approved_at: now,
-        approved_by: 'system',
-        rejected_at: null,
-        rejected_by: null,
-        last_login_at: now,
-        created_at: now
-      };
-      getState().users.push(administrator);
-      addAudit('administrator_created', null, administrator.id, {
-        targetType: 'user',
-        targetId: administrator.id,
-        details: { user_id: administrator.id }
+      const administrator = await createFirstAdministrator({
+        username: String(data.username || ''),
+        email: String(data.email || ''),
+        password: String(data.password || ''),
+        confirmPassword: String(data.confirmPassword || '')
       });
-      setAuthSession(administrator.id, true);
+      const users = mergeRemoteProfiles([administrator], administrator);
       setState({
-        users: [...getState().users],
-        auditLogs: [...getState().auditLogs],
-        currentUserId: administrator.id
+        users,
+        currentUserId: administrator.id,
+        meta: { ...getState().meta, hasActiveAdministrator: true }
       });
       persistState();
+      startProfileRealtime();
       navigate('admin');
       triggerHapticFeedback('approved', { force: true });
       showToast('Administrator created.');
@@ -848,81 +863,53 @@ async function handleSubmit(event) {
       const password = String(data.password || '');
       const lock = getLoginLock(identifier);
       if (lock.locked) throw new Error(`Too many attempts. Try again in ${lock.secondsRemaining} seconds.`);
-      const loginUser = userByLoginIdentifier(identifier);
-      const invalidCredential = loginUser?.password_format === 'legacy_pin'
-        ? !/^\d{6}$/.test(password)
-        : Boolean(validatePassword(password));
-      if (!identifier || invalidCredential) throw new Error('Username/email or password is incorrect.');
-      if (loginUser && !loginUser.password_hash) throw new Error('Ask an admin to reset your password.');
-      const passwordMatches = loginUser ? await verifyPassword(password, loginUser) : false;
-      if (!loginUser || !passwordMatches) {
+      if (!identifier || !password) throw new Error('Username/email or password is incorrect.');
+
+      let loginUser;
+      try {
+        loginUser = await loginAccount(identifier, password, data.remember === 'on');
+      } catch (error) {
         const nextLock = recordFailedLogin(identifier);
         if (nextLock.locked) throw new Error(`Too many attempts. Try again in ${nextLock.secondsRemaining} seconds.`);
-        throw new Error('Username/email or password is incorrect.');
+        throw new Error(error?.message?.includes('Email not confirmed')
+          ? 'Confirm your email first.'
+          : 'Username/email or password is incorrect.');
       }
-      if (loginUser.account_status === 'pending') throw new Error('Your account is waiting for admin approval.');
-      if (loginUser.account_status === 'rejected') throw new Error('Your registration was not approved.');
-      if (loginUser.account_status === 'suspended') throw new Error('Your account has been suspended.');
-      if (loginUser.account_status !== 'active') throw new Error('This account cannot log in.');
 
       clearLoginAttempts(identifier);
-      setAuthSession(loginUser.id, data.remember === 'on');
-      const users = getState().users.map(item => item.id === loginUser.id ? { ...item, last_login_at: new Date().toISOString() } : item);
+      const visibleProfiles = await getVisibleProfiles(loginUser);
+      const users = loginUser.is_admin ? visibleProfiles : mergeRemoteProfiles(visibleProfiles, loginUser);
       setState({ users, currentUserId: loginUser.id });
       persistState();
-      navigate(defaultRouteForUser(loginUser));
-      triggerHapticFeedback('approved', { force: true });
-      showToast(`Welcome, ${loginUser.display_name}.`);
+      startProfileRealtime();
+
+      if (loginUser.account_status === 'active') {
+        navigate(defaultRouteForUser(loginUser));
+        triggerHapticFeedback('approved', { force: true });
+        showToast(`Welcome, ${loginUser.display_name}.`);
+      } else {
+        navigate(loginUser.account_status);
+      }
       return;
     }
 
     if (form.id === 'register-form') {
-      const username = normalizeUsername(data.username);
-      const usernameError = validateUsername(String(data.username || ''));
-      if (usernameError) throw new Error(usernameError);
-      const loginName = ensureUniqueLoginName(username);
-      const emailError = validateEmail(String(data.email || ''));
-      if (emailError) throw new Error(emailError);
-      const email = ensureUniqueEmail(data.email);
-      const displayName = username;
-      const password = String(data.password || '');
-      const confirmPassword = String(data.confirmPassword || '');
-      const passwordError = validatePassword(password);
-      if (passwordError) throw new Error(passwordError);
-      if (password !== confirmPassword) throw new Error('The passwords do not match.');
-
-      const passwordSalt = createPasswordSalt();
-      const passwordHash = await hashPassword(password, passwordSalt);
-      const applicant = {
-        id: makeId('u'),
-        display_name: displayName,
-        login_name: loginName,
-        email,
-        account_status: 'pending',
-        is_admin: false,
-        password_salt: passwordSalt,
-        password_hash: passwordHash,
-        password_format: 'password',
-        must_change_password: false,
-        approved_at: null,
-        approved_by: null,
-        rejected_at: null,
-        rejected_by: null,
-        last_login_at: null,
-        created_at: new Date().toISOString()
-      };
-      getState().users.push(applicant);
-      notifyAdminsOfRegistration(applicant);
-      addAudit('registration_submitted', null, null, {
-        targetType: 'user',
-        targetId: applicant.id,
-        details: { user_id: applicant.id, login_name: applicant.login_name, email: applicant.email }
+      const result = await registerAccount({
+        username: String(data.username || ''),
+        email: String(data.email || ''),
+        password: String(data.password || ''),
+        confirmPassword: String(data.confirmPassword || '')
       });
-      commit({
-        users: [...getState().users],
-        notifications: [...getState().notifications],
-        auditLogs: [...getState().auditLogs]
-      });
+      if (result.needsEmailConfirmation) {
+        navigate('pending');
+        showToast('Check your email, then return to log in.');
+        return;
+      }
+      const applicant = result.profile;
+      const users = mergeRemoteProfiles([applicant], applicant);
+      setState({ users, currentUserId: applicant.id });
+      persistState();
+      startProfileRealtime();
       triggerHapticFeedback('approved', { force: true });
       navigate('pending');
       return;
@@ -932,36 +919,26 @@ async function handleSubmit(event) {
     if (!user) throw new Error('Log in first.');
 
     if (form.id === 'forced-password-change-form') {
-      const submittedEmail = String(data.email || user.email || '');
-      const emailError = validateEmail(submittedEmail);
-      if (emailError) throw new Error(emailError);
-      const email = ensureUniqueEmail(submittedEmail, user.id);
-      const password = String(data.password || '');
-      const confirmPassword = String(data.confirmPassword || '');
-      const passwordError = validatePassword(password);
-      if (passwordError) throw new Error(passwordError);
-      if (password !== confirmPassword) throw new Error('The passwords do not match.');
-      const passwordSalt = createPasswordSalt();
-      const passwordHash = await hashPassword(password, passwordSalt);
-      const users = getState().users.map(item => item.id === user.id ? { ...item, email, password_salt: passwordSalt, password_hash: passwordHash, password_format: 'password', must_change_password: false } : item);
-      commit({ users });
-      navigate(defaultRouteForUser({ ...user, email, must_change_password: false }));
+      const updated = await completeForcedPasswordChange({
+        password: String(data.password || ''),
+        confirmPassword: String(data.confirmPassword || '')
+      });
+      const users = mergeRemoteProfiles([updated], updated);
+      setState({ users, currentUserId: updated.id });
+      persistState();
+      navigate(defaultRouteForUser(updated));
       triggerHapticFeedback('approved', { force: true });
       showToast('New password saved.');
       return;
     }
 
     if (form.id === 'change-password-form') {
-      const currentPassword = String(data.currentPassword || '');
-      if (!(await verifyPassword(currentPassword, user))) throw new Error('Current password is incorrect.');
-      const password = String(data.password || '');
-      const confirmPassword = String(data.confirmPassword || '');
-      const passwordError = validatePassword(password);
-      if (passwordError) throw new Error(passwordError);
-      if (password !== confirmPassword) throw new Error('The passwords do not match.');
-      const passwordSalt = createPasswordSalt();
-      const passwordHash = await hashPassword(password, passwordSalt);
-      commit({ users: getState().users.map(item => item.id === user.id ? { ...item, password_salt: passwordSalt, password_hash: passwordHash, password_format: 'password', must_change_password: false } : item) });
+      await changeOwnPassword({
+        currentPassword: String(data.currentPassword || ''),
+        password: String(data.password || ''),
+        confirmPassword: String(data.confirmPassword || '')
+      });
+      await refreshRemoteProfiles({ routeAfterApproval: false });
       closeActiveModal();
       showToast('Password changed.');
       return;
@@ -976,12 +953,8 @@ async function handleSubmit(event) {
       const passwordError = validatePassword(password);
       if (passwordError) throw new Error(passwordError);
       if (password !== confirmPassword) throw new Error('The passwords do not match.');
-      const passwordSalt = createPasswordSalt();
-      const passwordHash = await hashPassword(password, passwordSalt);
-      const users = getState().users.map(item => item.id === targetUser.id ? { ...item, password_salt: passwordSalt, password_hash: passwordHash, password_format: 'password', must_change_password: true } : item);
-      addNotification(targetUser.id, 'Password reset', 'An admin reset your password. Log in with the temporary password, then choose a new one.', { type: 'info' });
-      addAudit('password_reset', null, user.id, { targetType: 'user', targetId: targetUser.id, details: { user_id: targetUser.id } });
-      commit({ users, notifications: [...getState().notifications], auditLogs: [...getState().auditLogs] });
+      await runAdminAccountAction('reset_password', { userId: targetUser.id, password });
+      await refreshRemoteProfiles({ routeAfterApproval: false });
       closeActiveModal();
       showToast('Temporary password saved.');
       return;
@@ -1343,12 +1316,10 @@ async function handleSubmit(event) {
       if (nameError) throw new Error(nameError);
       const emailError = validateEmail(String(data.email || ''));
       if (emailError) throw new Error(emailError);
-      const email = ensureUniqueEmail(data.email, user.id);
-      commit({
-        users: getState().users.map(item =>
-          item.id === user.id ? { ...item, display_name: displayName, email } : item
-        )
-      });
+      const updated = await updateOwnProfile({ displayName, email: String(data.email || '') });
+      const users = mergeRemoteProfiles([updated], updated);
+      setState({ users, currentUserId: updated.id });
+      persistState();
       showToast('Profile saved.');
     }
   } catch (error) {
@@ -1474,20 +1445,9 @@ async function handleAction(event) {
       const applicantId = target.dataset.adminRegistrationApprove;
       const applicant = userById(applicantId);
       if (!applicant || !['pending', 'rejected'].includes(applicant.account_status)) throw new Error('This account request is no longer waiting.');
-      applicant.account_status = 'active';
-      applicant.approved_at = new Date().toISOString();
-      applicant.approved_by = user.id;
-      applicant.rejected_at = null;
-      applicant.rejected_by = null;
-      markRegistrationNotificationsRead(applicant.id);
-      addNotification(applicant.id, 'Account approved', 'Your Pokerat account was approved. You can now log in.', { type: 'approved' });
-      addAudit('registration_approved', null, user.id, {
-        targetType: 'user',
-        targetId: applicant.id,
-        details: { user_id: applicant.id, new_status: 'active' }
-      });
-      commit({ users: [...getState().users], notifications: [...getState().notifications], auditLogs: [...getState().auditLogs] });
-      closeAdminRegistrationApprovalDialog(applicant.id);
+      await runAdminAccountAction('set_status', { userId: applicantId, status: 'active' });
+      await refreshRemoteProfiles({ routeAfterApproval: false });
+      closeAdminRegistrationApprovalDialog(applicantId);
       triggerHapticFeedback('approved', { force: true });
       showToast(`${applicant.display_name} can now log in.`);
       requestAnimationFrame(() => syncAdminRegistrationApprovalQueue(currentUser()));
@@ -1498,21 +1458,10 @@ async function handleAction(event) {
       if (!applicant || applicant.account_status !== 'pending') throw new Error('This account request is no longer waiting.');
       const queueDialog = target.closest('#admin-registration-queue-modal');
       const typedReason = queueDialog?.querySelector('[name="adminRegistrationRejectReason"]')?.value?.trim();
-      const reason = typedReason || (!queueDialog ? (prompt('Why are you rejecting this account?') || '').trim() : '') || 'Registration not approved by admin.';
-      applicant.account_status = 'rejected';
-      applicant.rejected_at = new Date().toISOString();
-      applicant.rejected_by = user.id;
-      applicant.approved_at = null;
-      applicant.approved_by = null;
-      markRegistrationNotificationsRead(applicant.id);
-      addNotification(applicant.id, 'Registration rejected', reason, { type: 'rejected' });
-      addAudit('registration_rejected', null, user.id, {
-        targetType: 'user',
-        targetId: applicant.id,
-        details: { user_id: applicant.id, reason, new_status: 'rejected' }
-      });
-      commit({ users: [...getState().users], notifications: [...getState().notifications], auditLogs: [...getState().auditLogs] });
-      closeAdminRegistrationApprovalDialog(applicant.id);
+      const reason = typedReason || 'Registration not approved by admin.';
+      await runAdminAccountAction('set_status', { userId: applicantId, status: 'rejected', reason });
+      await refreshRemoteProfiles({ routeAfterApproval: false });
+      closeAdminRegistrationApprovalDialog(applicantId);
       triggerHapticFeedback('rejected', { force: true });
       showToast('Registration rejected.', 'error');
       requestAnimationFrame(() => syncAdminRegistrationApprovalQueue(currentUser()));
@@ -1538,10 +1487,9 @@ async function handleAction(event) {
         destructive: true
       });
       if (!accepted) return;
-      commit({
-        users: getState().users.filter(item => item.id !== targetUserId),
-        notifications: getState().notifications.filter(item => item.user_id !== targetUserId && item.request_id !== targetUserId)
-      });
+      await runAdminAccountAction('delete_user', { userId: targetUserId });
+      await refreshRemoteProfiles({ routeAfterApproval: false });
+      commit({ notifications: getState().notifications.filter(item => item.user_id !== targetUserId && item.request_id !== targetUserId) });
       showToast('Account deleted.');
     } else if (target.dataset.reviewReport) {
       if (!user.is_admin) throw new Error('Admin only.');
@@ -1581,20 +1529,12 @@ async function handleAction(event) {
 
       const reason = (prompt(`Reason for changing this account to ${target.dataset.adminStatus}:`) || '').trim();
       if (!reason) return;
-      const users = getState().users.map(item =>
-        item.id === targetUserId ? { ...item, account_status: target.dataset.adminStatus } : item
-      );
-      addNotification(targetUserId, `Account ${target.dataset.adminStatus}`, `Administrator note: ${reason}`);
-      addAudit(`account_${target.dataset.adminStatus}`, null, user.id, {
-        targetType: 'user',
-        targetId: targetUserId,
-        details: { user_id: targetUserId, reason, new_status: target.dataset.adminStatus }
+      await runAdminAccountAction('set_status', {
+        userId: targetUserId,
+        status: target.dataset.adminStatus,
+        reason
       });
-      commit({
-        users,
-        notifications: [...getState().notifications],
-        auditLogs: [...getState().auditLogs]
-      });
+      await refreshRemoteProfiles({ routeAfterApproval: false });
       showToast('Account status updated.');
     }
   } catch (error) {

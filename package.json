@@ -1,9 +1,9 @@
 {
   "name": "pokerat",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
-  "description": "A lightweight private poker-table session and money-request tracker.",
+  "description": "A private poker-table session tracker with Supabase authentication and realtime account approval.",
   "scripts": {
     "test": "node --test tests/*.test.js"
   }

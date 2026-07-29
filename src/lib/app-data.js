@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'pokerat-app-v1';
 const LEGACY_STORAGE_KEY = 'pokerat-local-prototype-v1';
-const SCHEMA_VERSION = 13;
+const SCHEMA_VERSION = 14;
 
 const LEGACY_SEED_USER_IDS = new Set(['u-host', 'u-player', 'u-carlo', 'u-dana', 'u-admin']);
 const LEGACY_SEED_SESSION_IDS = new Set(['s-friday', 's-weekend', 's-sunday', 's-open', 's-closed']);
@@ -21,7 +21,7 @@ const notificationTypeFromTitle = title => {
 
 export function createEmptyData() {
   return {
-    meta: { schemaVersion: SCHEMA_VERSION, storage_notice: '' },
+    meta: { schemaVersion: SCHEMA_VERSION, storage_notice: '', hasActiveAdministrator: false },
     currentUserId: null,
     users: [],
     sessions: [],
@@ -35,7 +35,7 @@ export function createEmptyData() {
 }
 
 function normalizeUser(user) {
-  if (!user || !stringOrEmpty(user.id)) return null;
+  if (!user || !stringOrEmpty(user.id) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(user.id)) return null;
   const displayName = stringOrEmpty(user.display_name) || 'Player';
   const loginName = normalizeLoginName(user.login_name || displayName);
   const status = ['pending', 'active', 'rejected', 'suspended'].includes(user.account_status)
@@ -56,7 +56,8 @@ function normalizeUser(user) {
     password_salt: passwordSalt,
     password_hash: passwordHash,
     password_format: passwordFormat,
-    must_change_password: Boolean(user.must_change_password || user.must_change_pin || passwordFormat === 'legacy_pin' || !normalizeEmail(user.email) || (!passwordHash && !user.is_admin)),
+    status_note: stringOrEmpty(user.status_note),
+    must_change_password: Boolean(user.must_change_password || (passwordFormat !== 'supabase' && (user.must_change_pin || passwordFormat === 'legacy_pin' || !normalizeEmail(user.email) || (!passwordHash && !user.is_admin)))),
     approved_at: stringOrEmpty(user.approved_at) || (status === 'active' ? stringOrEmpty(user.created_at) || new Date().toISOString() : null),
     approved_by: stringOrEmpty(user.approved_by) || null,
     rejected_at: stringOrEmpty(user.rejected_at) || null,
@@ -263,7 +264,7 @@ function normalizeData(raw) {
 
   const currentUserId = userIds.has(cleaned.currentUserId) ? cleaned.currentUserId : null;
   return {
-    meta: { schemaVersion: SCHEMA_VERSION, storage_notice: '' },
+    meta: { schemaVersion: SCHEMA_VERSION, storage_notice: '', hasActiveAdministrator: Boolean(cleaned.meta?.hasActiveAdministrator) },
     currentUserId,
     users,
     sessions,
@@ -318,7 +319,7 @@ export function clearActivityData(existingData) {
   if (!normalized) throw new Error('Registered users could not be preserved because the saved data is invalid.');
 
   const cleared = {
-    meta: { schemaVersion: SCHEMA_VERSION, storage_notice: '' },
+    meta: { schemaVersion: SCHEMA_VERSION, storage_notice: '', hasActiveAdministrator: Boolean(normalized.meta?.hasActiveAdministrator) },
     currentUserId: normalized.users.some(user => user.id === normalized.currentUserId) ? normalized.currentUserId : null,
     users: normalized.users.map(user => ({ ...user })),
     sessions: [],
