@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Pokerat System icon</title>
+  <desc id="desc">A glowing cyan hexagonal emblem with the letter P.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#08172f"/>
+      <stop offset="0.55" stop-color="#173d83"/>
+      <stop offset="1" stop-color="#301a6f"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b9f6ff"/>
+      <stop offset="0.5" stop-color="#46caff"/>
+      <stop offset="1" stop-color="#8a68ff"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="14" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="#02040b"/>
+  <path d="M256 46 430 145v222L256 466 82 367V145Z" fill="url(#bg)" stroke="url(#edge)" stroke-width="18" filter="url(#glow)"/>
+  <path d="M172 145h96c72 0 116 37 116 99 0 65-46 103-121 103h-31v76h-60Zm60 54v94h29c40 0 61-16 61-48 0-31-20-46-59-46Z" fill="#e7fbff"/>
+  <path d="M121 179h42M349 179h42M121 333h42M349 333h42" stroke="#46caff" stroke-width="10" stroke-linecap="round" opacity=".7"/>
+</svg>

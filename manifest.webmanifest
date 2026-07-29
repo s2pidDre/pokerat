@@ -1,0 +1,17 @@
+{
+  "name": "Pokerat",
+  "short_name": "Pokerat",
+  "description": "Private poker table, session timer, cash-in and cash-out request tracker.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#02040b",
+  "theme_color": "#02040b",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
