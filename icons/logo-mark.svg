@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Pokerat emblem</title>
+  <desc id="desc">A glowing blue and violet hexagonal emblem with a spade-like energy flame.</desc>
+  <defs>
+    <radialGradient id="halo" cx="50%" cy="42%" r="58%">
+      <stop offset="0%" stop-color="#8fe3ff" stop-opacity="0.95"/>
+      <stop offset="22%" stop-color="#51b9ff" stop-opacity="0.78"/>
+      <stop offset="55%" stop-color="#5d62ff" stop-opacity="0.36"/>
+      <stop offset="100%" stop-color="#0c1330" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="frame" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#73d7ff"/>
+      <stop offset="52%" stop-color="#4184ff"/>
+      <stop offset="100%" stop-color="#7a5cff"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#162541" stop-opacity="0.82"/>
+      <stop offset="100%" stop-color="#060b18" stop-opacity="0.96"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#d9f8ff"/>
+      <stop offset="25%" stop-color="#8fe3ff"/>
+      <stop offset="56%" stop-color="#4fa6ff"/>
+      <stop offset="100%" stop-color="#7058ff"/>
+    </linearGradient>
+    <filter id="blurGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="6.5"/>
+    </filter>
+    <filter id="shadowGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feDropShadow dx="0" dy="0" stdDeviation="2.2" flood-color="#5bbdff" flood-opacity="0.65"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="4.8" flood-color="#6d5bff" flood-opacity="0.26"/>
+    </filter>
+  </defs>
+  <g fill="none" fill-rule="evenodd">
+    <circle cx="64" cy="58" r="32" fill="url(#halo)" filter="url(#blurGlow)" opacity="0.9"/>
+    <path d="M64 9 98 27v38L64 83 30 65V27z" fill="url(#glass)" stroke="url(#frame)" stroke-opacity="0.16" stroke-width="1.2"/>
+    <path d="M64 14 93 29.8v32.4L64 78 35 62.2V29.8z" fill="none" stroke="url(#frame)" stroke-opacity="0.22" stroke-width="1"/>
+    <path d="M52.2 24.3c4.8-3.8 19.5-3.8 24.2 0" stroke="#81deff" stroke-opacity="0.65" stroke-width="1.7" stroke-linecap="round"/>
+    <path d="M28.2 48.2h6.8M93 48.2h6.8" stroke="#73d7ff" stroke-opacity="0.56" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M63.9 23.6c6.8 11.2 16.1 16.4 16.1 27.1 0 9.7-6.7 16.9-16.1 21.4-9.4-4.5-16.1-11.8-16.1-21.4 0-10.7 9.3-15.9 16.1-27.1Z" fill="url(#flame)" filter="url(#shadowGlow)"/>
+    <path d="M63.9 29.8c3.9 6.2 9.2 9.1 9.2 14.9 0 5.3-3.8 9.3-9.2 11.7-5.4-2.4-9.2-6.4-9.2-11.7 0-5.8 5.3-8.7 9.2-14.9Z" fill="#0a1120" fill-opacity="0.22"/>
+    <path d="M63.9 24.8c2.3 4.8 5.7 8.2 5.7 12.7 0 3.8-2.2 6.8-5.7 8.8-3.5-2-5.7-5-5.7-8.8 0-4.5 3.4-7.9 5.7-12.7Z" fill="#ffffff" fill-opacity="0.26"/>
+  </g>
+</svg>

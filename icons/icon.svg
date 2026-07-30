@@ -1,24 +1,48 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
-  <title id="title">Pokerat System icon</title>
-  <desc id="desc">A glowing cyan hexagonal emblem with the letter P.</desc>
+  <title id="title">Pokerat app icon</title>
+  <desc id="desc">A dark rounded-square app icon featuring the Pokerat glowing hex emblem and spade flame.</desc>
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#08172f"/>
-      <stop offset="0.55" stop-color="#173d83"/>
-      <stop offset="1" stop-color="#301a6f"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#08101f"/>
+      <stop offset="52%" stop-color="#060c17"/>
+      <stop offset="100%" stop-color="#03070f"/>
     </linearGradient>
-    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#b9f6ff"/>
-      <stop offset="0.5" stop-color="#46caff"/>
-      <stop offset="1" stop-color="#8a68ff"/>
+    <radialGradient id="aura" cx="50%" cy="38%" r="62%">
+      <stop offset="0%" stop-color="#88e1ff" stop-opacity="0.88"/>
+      <stop offset="26%" stop-color="#49b7ff" stop-opacity="0.66"/>
+      <stop offset="58%" stop-color="#585dff" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#08101f" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="frame" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#73d7ff"/>
+      <stop offset="50%" stop-color="#3e86ff"/>
+      <stop offset="100%" stop-color="#7a5cff"/>
     </linearGradient>
-    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="14" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#14233f" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#060b18" stop-opacity="0.98"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#dffaff"/>
+      <stop offset="24%" stop-color="#8fe3ff"/>
+      <stop offset="55%" stop-color="#4ca7ff"/>
+      <stop offset="100%" stop-color="#7058ff"/>
+    </linearGradient>
+    <filter id="softGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feDropShadow dx="0" dy="0" stdDeviation="10" flood-color="#63c6ff" flood-opacity="0.6"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="24" flood-color="#6b5cff" flood-opacity="0.22"/>
     </filter>
   </defs>
-  <rect width="512" height="512" rx="96" fill="#02040b"/>
-  <path d="M256 46 430 145v222L256 466 82 367V145Z" fill="url(#bg)" stroke="url(#edge)" stroke-width="18" filter="url(#glow)"/>
-  <path d="M172 145h96c72 0 116 37 116 99 0 65-46 103-121 103h-31v76h-60Zm60 54v94h29c40 0 61-16 61-48 0-31-20-46-59-46Z" fill="#e7fbff"/>
-  <path d="M121 179h42M349 179h42M121 333h42M349 333h42" stroke="#46caff" stroke-width="10" stroke-linecap="round" opacity=".7"/>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <circle cx="256" cy="220" r="122" fill="url(#aura)"/>
+  <g filter="url(#softGlow)">
+    <path d="M256 92 370 154v127L256 343 142 281V154z" fill="url(#glass)" stroke="url(#frame)" stroke-opacity="0.35" stroke-width="7"/>
+    <path d="M256 107 356 161v112L256 327 156 273V161z" fill="none" stroke="url(#frame)" stroke-opacity="0.24" stroke-width="5"/>
+    <path d="M220 131c13-9 59-9 72 0" stroke="#86e4ff" stroke-opacity="0.75" stroke-width="7" stroke-linecap="round"/>
+    <path d="M144 220h18M350 220h18" stroke="#86d4ff" stroke-opacity="0.62" stroke-width="6" stroke-linecap="round"/>
+    <path d="M256 138c22 37 52 54 52 89 0 32-22 57-52 72-30-15-52-40-52-72 0-35 30-52 52-89Z" fill="url(#flame)"/>
+    <path d="M256 157c12 18 28 27 28 44 0 15-11 27-28 35-17-8-28-20-28-35 0-17 16-26 28-44Z" fill="#0a1120" fill-opacity="0.2"/>
+    <path d="M256 142c8 16 17 26 17 36 0 9-6 17-17 23-11-6-17-14-17-23 0-10 9-20 17-36Z" fill="#fff" fill-opacity="0.24"/>
+  </g>
+  <rect x="84" y="386" width="344" height="2" rx="1" fill="url(#frame)" fill-opacity="0.35"/>
 </svg>

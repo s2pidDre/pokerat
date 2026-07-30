@@ -8,6 +8,13 @@ const leaderboardIcon = () => `
     <path class="system-rank-icon__mark" d="m8.2 10.1 3.8-3 3.8 3M8.8 14.1 12 16.7l3.2-2.6" />
     <path class="system-rank-icon__core" d="M12 10.4 13.6 12 12 13.6 10.4 12z" />
   </svg>`;
+const notificationIcon = () => `
+  <svg class="system-notification-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path class="system-notification-icon__frame" d="M12 3.1c-3.1 0-5.2 2.3-5.2 5.5v2.7c0 1.5-.5 2.9-1.5 4l-.8.9h15l-.8-.9c-1-1.1-1.5-2.5-1.5-4V8.6c0-3.2-2.1-5.5-5.2-5.5Z" />
+    <path class="system-notification-icon__arc" d="M9.6 18.2c.4 1.1 1.3 1.7 2.4 1.7s2-.6 2.4-1.7" />
+    <path class="system-notification-icon__rune" d="m12 5.2 1.2 1.5-1.2 1.5-1.2-1.5Z" />
+  </svg>`;
+const brandMark = () => `<span class="brand-mark" aria-hidden="true"><img class="brand-mark__img" src="./icons/logo-mark.svg" alt=""></span>`;
 const statusLabel = value => ({
   lobby: 'Waiting to start',
   active: 'Playing',
@@ -54,7 +61,7 @@ export function initialAdminSetupView() {
   return `
     <main class="access-screen">
       <section class="access-card auth-card system-window">
-        <div class="simple-brand"><span class="brand-mark">P</span><div><strong>POKERAT</strong><small>FIRST SETUP</small></div></div>
+        <div class="simple-brand">${brandMark()}<div><strong>POKERAT</strong><small>FIRST SETUP</small></div></div>
         <div class="access-copy"><span class="system-tag">OWNER SETUP</span><h1>Create administrator</h1><p>This is the first account. It can approve new players and manage the app.</p></div>
         <form id="initial-admin-form" class="stack auth-form">
           <label>Username<input name="username" minlength="3" maxlength="20" pattern="[A-Za-z0-9_]+" required autocomplete="username" placeholder="pokerboss" autofocus></label>
@@ -69,7 +76,7 @@ export function initialAdminSetupView() {
 }
 
 export function accountAccessView({ mode = 'login', profile = null } = {}) {
-  const brand = `<div class="simple-brand"><span class="brand-mark">P</span><div><strong>POKERAT</strong><small>PRIVATE TABLES</small></div></div>`;
+  const brand = `<div class="simple-brand">${brandMark()}<div><strong>POKERAT</strong><small>PRIVATE TABLES</small></div></div>`;
 
   if (mode === 'register') {
     return `
@@ -143,7 +150,7 @@ export function forcePasswordChangeView(profile) {
   return `
     <main class="access-screen">
       <section class="access-card auth-card system-window">
-        <div class="simple-brand"><span class="brand-mark">P</span><div><strong>POKERAT</strong><small>PASSWORD RESET</small></div></div>
+        <div class="simple-brand">${brandMark()}<div><strong>POKERAT</strong><small>PASSWORD RESET</small></div></div>
         <div class="access-copy"><span class="system-tag">ONE LAST STEP</span><h1>Choose a new password</h1><p>${escapeHtml(profile?.display_name || 'Player')}, replace the temporary password before continuing.</p></div>
         <form id="forced-password-change-form" class="stack auth-form">
           <label>New password<input name="password" type="password" minlength="8" maxlength="64" required autocomplete="new-password" placeholder="At least 8 characters" autofocus></label>
@@ -157,49 +164,58 @@ export function forcePasswordChangeView(profile) {
 }
 
 export function appShell({ profile, isAdmin, route, content, notificationCount = 0, connectionStatus = 'connected' }) {
-  const requestedPage = route.replace(/^#\/?/, '').split('/')[0] || 'home';
-  const page = requestedPage === 'audit' ? 'admin' : requestedPage;
+  const page = route.replace(/^#\/?/, '').split('/')[0] || 'home';
   const nav = [
     ['home', '⌂', 'Home'],
     ['leaderboard', leaderboardIcon(), 'Leaderboard'],
     ['history', '↺', 'History'],
     ['profile', '●', 'Profile']
   ];
-  if (isAdmin) nav.push(['admin', '⚙', 'Admin']);
+  if (isAdmin) {
+    nav.push(['admin', '⚙', 'Admin']);
+    nav.push(['audit', '▤', 'Audit log']);
+  }
 
-  const navHtml = nav.map(([id, icon, label]) => `
+  const navItems = items => items.map(([id, icon, label]) => `
     <a href="#/${id}" class="nav-item ${page === id ? 'is-active' : ''}" aria-current="${page === id ? 'page' : 'false'}">
       <span class="nav-icon">${icon}</span><span>${label}</span>
     </a>`).join('');
+  const desktopNavHtml = navItems(nav);
+  const mobileNavHtml = navItems(nav.filter(([id]) => id !== 'audit'));
+  const connectionLabel = connectionStatus === 'connected' ? 'Connected' : connectionStatus === 'disconnected' ? 'Connection lost' : 'Reconnecting…';
   const connectionBanner = connectionStatus === 'connected' ? '' : `
     <div class="connection-banner connection-banner--${connectionStatus}" role="status" aria-live="polite">
       <span class="connection-banner__dot" aria-hidden="true"></span>
-      <div><strong>${connectionStatus === 'disconnected' ? 'Connection lost' : 'Reconnecting…'}</strong><span>${connectionStatus === 'disconnected' ? 'Live updates are paused until Pokerat reconnects.' : 'Live updates may be delayed for a moment.'}</span></div>
+      <div><strong>${connectionLabel}</strong><span>${connectionStatus === 'disconnected' ? 'Live updates are paused until Pokerat reconnects.' : 'Live updates may be delayed for a moment.'}</span></div>
       <button class="button button--ghost button--small" type="button" data-refresh-realtime>Refresh data</button>
     </div>`;
 
   return `
-    <div class="app-layout">
+    <div class="app-layout" data-page="${page}">
       <aside class="sidebar">
-        <div class="simple-brand"><span class="brand-mark">P</span><div><strong>POKERAT</strong><small>SYSTEM</small></div></div>
-        <nav class="main-nav" aria-label="Main navigation">${navHtml}</nav>
-        <div class="sidebar-user">
-          <span class="avatar">${initials(profile?.display_name)}</span>
-          <div><strong>${escapeHtml(profile?.display_name || 'User')}</strong><small>${isAdmin ? 'Admin' : 'User'}</small></div>
+        <div class="sidebar-brand simple-brand">${brandMark()}<div><strong>POKERAT</strong><small>SYSTEM</small></div></div>
+        <nav class="main-nav" aria-label="Main navigation">${desktopNavHtml}</nav>
+        <div class="sidebar-footer">
+          <div class="sidebar-connection sidebar-connection--${connectionStatus}"><span class="sidebar-connection__dot" aria-hidden="true"></span><strong>${connectionLabel}</strong></div>
+          <div class="sidebar-user">
+            <span class="avatar">${initials(profile?.display_name)}</span>
+            <div><strong>${escapeHtml(profile?.display_name || 'User')}</strong><small>${isAdmin ? 'Admin' : 'User'}</small></div>
+          </div>
         </div>
       </aside>
       <div class="app-main">
         <header class="topbar">
-          <div class="mobile-brand"><span class="brand-mark">P</span><strong>POKERAT</strong></div>
+          <div class="mobile-brand">${brandMark()}<strong>POKERAT</strong></div>
+          <div class="topbar-shadow-mark" aria-hidden="true"></div>
           <div class="topbar-actions">
-            <button id="notification-button" class="icon-button notification-button" aria-label="Notifications">🔔${notificationCount ? `<b>${notificationCount > 99 ? '99+' : notificationCount}</b>` : ''}</button>
-            <button id="theme-toggle" class="icon-button" aria-label="Change theme">◐</button>
+            <button id="notification-button" class="icon-button notification-button" aria-label="Notifications">${notificationIcon()}${notificationCount ? `<b>${notificationCount > 99 ? '99+' : notificationCount}</b>` : ''}</button>
+            <div class="topbar-profile" aria-label="Current account"><span class="avatar">${initials(profile?.display_name)}</span><span><strong>${escapeHtml(profile?.display_name || 'User')}</strong><small>${isAdmin ? 'Admin' : 'User'}</small></span></div>
             <button data-logout class="button button--ghost button--small">Log out</button>
           </div>
         </header>
         ${connectionBanner}
-        <main class="page-container">${content}</main>
-        <nav class="bottom-nav" aria-label="Mobile navigation">${navHtml}</nav>
+        <main class="page-container page-container--${page}">${content}</main>
+        <nav class="bottom-nav" aria-label="Mobile navigation">${mobileNavHtml}</nav>
       </div>
     </div>`;
 }
@@ -224,7 +240,7 @@ export function homeView({ sessions, requests, profile }) {
     ${pageHeader(`Hi, ${firstName}`, openSession ? 'The current table is ready below.' : 'Start a table or join with an invite code.')}
     ${startActions}
     ${hostPending.length ? `<section class="simple-panel alert-panel"><div><strong>${hostPending.length} request${hostPending.length === 1 ? '' : 's'} waiting</strong><span>Open the table to review them.</span></div><a class="button button--primary" href="#/session/${hostPending[0].session_id}">Review</a></section>` : ''}
-    ${openSession ? `<section class="section-block"><div class="section-heading"><h2>Open table</h2></div><div class="card-grid">${sessionCard(openSession, profile.id)}</div></section>` : ''}`;
+    ${openSession ? `<section class="section-block"><div class="section-heading"><h2>Open table</h2></div><div class="card-grid home-open-table-grid">${sessionCard(openSession, profile.id)}</div></section>` : ''}`;
 }
 
 export function sessionCard(session, profileId) {
@@ -236,11 +252,12 @@ export function sessionCard(session, profileId) {
       <p>${own ? 'Created by you' : `Created by ${escapeHtml(session.host?.display_name || 'User')}`}</p>
       ${sessionTimerMarkup(session, true)}`;
 
+  const shadowDecoration = '<span class="session-card__shadow" aria-hidden="true"></span><span class="session-card__rune" aria-hidden="true"></span>';
   if (joined) {
-    return `<a class="session-card system-window" href="#/session/${session.id}">${content}<span class="open-label">Open table →</span></a>`;
+    return `<a class="session-card system-window" href="#/session/${session.id}">${shadowDecoration}<div class="session-card__content">${content}<span class="open-label">Open table →</span></div></a>`;
   }
 
-  return `<article class="session-card system-window">${content}<button class="button button--primary session-card__join" data-join-open-table="${escapeHtml(session.session_code)}">Join table</button></article>`;
+  return `<article class="session-card system-window">${shadowDecoration}<div class="session-card__content">${content}<button class="button button--primary session-card__join" data-join-open-table="${escapeHtml(session.session_code)}">Join table</button></div></article>`;
 }
 
 function activeSessionTimerMarkup(session) {
@@ -759,7 +776,7 @@ export function notificationList(notifications) {
 }
 
 export function suspendedView(profile) {
-  return `<main class="access-screen"><section class="access-card auth-card system-window auth-status-card"><span class="brand-mark">P</span><span class="auth-status-icon">!</span><h1>Account suspended</h1><p>${profile?.status_note ? escapeHtml(profile.status_note) : `${escapeHtml(profile?.display_name || 'Player')}, ask an admin to restore your account.`}</p><button data-logout class="button button--primary">Log out</button></section></main>`;
+  return `<main class="access-screen"><section class="access-card auth-card system-window auth-status-card">${brandMark()}<span class="auth-status-icon">!</span><h1>Account suspended</h1><p>${profile?.status_note ? escapeHtml(profile.status_note) : `${escapeHtml(profile?.display_name || 'Player')}, ask an admin to restore your account.`}</p><button data-logout class="button button--primary">Log out</button></section></main>`;
 }
 
 export function emptyState(title, description, buttonLabel = '', openType = '') {

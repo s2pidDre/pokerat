@@ -109,3 +109,25 @@ test('admin can permanently delete only finished tables through a protected RPC'
   assert.match(sql, /'table_deleted'/);
   assert.match(sql, /grant execute on function public\.admin_delete_poker_table\(uuid, text\) to authenticated/);
 });
+
+test('realtime money requests reopen the host approval popup and the themed notification icon renders', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const { appShell } = await import('../src/components/templates.js');
+  const shell = appShell({
+    profile: { id: 'host', display_name: 'Host Player', account_status: 'active' },
+    isAdmin: false,
+    route: '#/home',
+    content: '',
+    notificationCount: 2
+  });
+
+  assert.match(shell, /system-notification-icon/);
+  assert.doesNotMatch(shell, /🔔/);
+
+  const main = await readFile(new URL('../src/main.js', import.meta.url), 'utf8');
+  const css = await readFile(new URL('../src/styles/main.css', import.meta.url), 'utf8');
+  assert.match(main, /table === 'money_requests' && payload\?\.eventType === 'INSERT'/);
+  assert.match(main, /syncHostMoneyApprovalQueue\(currentUser\(\)\)/);
+  assert.match(css, /TEXT-SAFETY \+ THEMED NOTIFICATION ICON/);
+  assert.match(css, /overflow-wrap: anywhere/);
+});

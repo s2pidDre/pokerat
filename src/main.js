@@ -33,6 +33,7 @@ let sessionTimerInterval = null;
 const surfacedNotificationIds = new Set();
 let activityRefreshTimer = null;
 let activityRefreshPromise = null;
+let showHostMoneyQueueAfterRealtimeRefresh = false;
 let notificationBaselineReady = false;
 const pendingNotificationPopups = new Map();
 let notificationPopupTimer = null;
@@ -557,6 +558,9 @@ async function signOut(message = '') {
   closeHostMoneyApprovalDialog();
   resetNotificationBaseline();
   clearRealtimeRegistrationQueue();
+  if (activityRefreshTimer) window.clearTimeout(activityRefreshTimer);
+  activityRefreshTimer = null;
+  showHostMoneyQueueAfterRealtimeRefresh = false;
   sessionStorage.removeItem(ADMIN_PENDING_ROUTE_KEY);
   realtimeConnectionStatus = 'connected';
   if (realtimeDisconnectTimer) window.clearTimeout(realtimeDisconnectTimer);
@@ -659,17 +663,30 @@ async function refreshRemoteActivity({ quiet = false, seedNotifications = false 
   return activityRefreshPromise;
 }
 
-function queueActivityRefresh(delay = 80) {
+function queueActivityRefresh(delay = 80, { showHostMoneyQueue = false } = {}) {
+  if (showHostMoneyQueue) showHostMoneyQueueAfterRealtimeRefresh = true;
   if (activityRefreshTimer) window.clearTimeout(activityRefreshTimer);
-  activityRefreshTimer = window.setTimeout(() => {
+  activityRefreshTimer = window.setTimeout(async () => {
     activityRefreshTimer = null;
-    refreshRemoteActivity({ quiet: true }).catch(error => console.error('Realtime activity refresh failed:', error));
+    const shouldShowHostMoneyQueue = showHostMoneyQueueAfterRealtimeRefresh;
+    showHostMoneyQueueAfterRealtimeRefresh = false;
+    try {
+      await refreshRemoteActivity({ quiet: true });
+      if (shouldShowHostMoneyQueue) {
+        requestAnimationFrame(() => syncHostMoneyApprovalQueue(currentUser()));
+      }
+    } catch (error) {
+      console.error('Realtime activity refresh failed:', error);
+    }
   }, delay);
 }
 
 function startActivityRealtime() {
   subscribeToPokeratActivity(
-    () => queueActivityRefresh(),
+    ({ table, payload } = {}) => {
+      const newMoneyRequest = table === 'money_requests' && payload?.eventType === 'INSERT';
+      queueActivityRefresh(80, { showHostMoneyQueue: newMoneyRequest });
+    },
     (status, error) => {
       if (status === 'SUBSCRIBED') {
         setRealtimeConnectionStatus('connected');
@@ -858,7 +875,8 @@ function render() {
 }
 
 async function bootstrap() {
-  document.documentElement.dataset.theme = localStorage.getItem('pokerat-theme') || 'dark';
+  document.documentElement.dataset.theme = 'dark';
+  localStorage.removeItem('pokerat-theme');
   const data = loadAppData();
   seedNotificationBaseline(data.notifications);
   setState({ ...data, loading: true });
@@ -1165,13 +1183,6 @@ function bindEvents() {
         setRealtimeConnectionStatus('disconnected');
         showToast(error.message || 'Could not reconnect.', 'error', 5000);
       }
-      return;
-    }
-
-    if (event.target.closest('#theme-toggle')) {
-      const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-      document.documentElement.dataset.theme = next;
-      localStorage.setItem('pokerat-theme', next);
       return;
     }
 
