@@ -2683,7 +2683,7 @@ textarea::placeholder { color: color-mix(in srgb, var(--muted) 88%, transparent)
   margin-bottom: 0.7rem;
 }
 
-.notification-section-heading h3 { margin: 0; }
+
 
 .toast {
   border-color: rgba(102, 201, 255, 0.22);
@@ -3932,5 +3932,480 @@ small,
   .sidebar-brand .brand-mark {
     width: 76px;
     height: 76px;
+  }
+}
+
+/* ==========================================================
+   RESPONSIVE STABILITY + MOBILE LAYOUT
+   Consolidated final overrides for short pages, auth screens,
+   notifications, and narrow leaderboard rows.
+   ========================================================== */
+
+body:has(dialog[open]) {
+  overflow: hidden;
+}
+
+/* Short desktop pages fill the viewport without creating fake scroll. */
+@media (min-width: 841px) {
+  .app-main {
+    min-height: 100dvh;
+  }
+
+  .page-container {
+    min-height: calc(100dvh - 84px);
+    padding-bottom: 2rem;
+  }
+
+  .app-main:has(> .connection-banner) .page-container {
+    min-height: calc(100dvh - 150px);
+  }
+}
+
+/* Authentication pages stay fixed when content fits, while the card
+   itself becomes scrollable for zoom, keyboard, or short viewports. */
+.access-screen--login,
+.access-screen--register {
+  width: 100%;
+  height: 100dvh;
+  min-height: 100dvh;
+  overflow: hidden;
+  padding: clamp(0.45rem, 1.4vh, 0.9rem);
+}
+
+.access-screen--login .access-card,
+.access-screen--register .access-card {
+  width: min(100%, 680px);
+  max-height: calc(100dvh - clamp(0.9rem, 2.8vh, 1.8rem));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.access-screen--login .access-card::-webkit-scrollbar,
+.access-screen--register .access-card::-webkit-scrollbar,
+.modal__card--notifications [data-notification-panel]::-webkit-scrollbar {
+  width: 6px;
+}
+
+.access-screen--login .access-card::-webkit-scrollbar-thumb,
+.access-screen--register .access-card::-webkit-scrollbar-thumb,
+.modal__card--notifications [data-notification-panel]::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(101, 199, 255, 0.28);
+}
+
+/* Notifications: only the list scrolls; cards and actions stay contained. */
+.modal__card--notifications {
+  width: min(100%, 620px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal__card--notifications .modal__header {
+  flex: 0 0 auto;
+}
+
+.modal__card--notifications [data-notification-panel] {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.modal__card--notifications .notification-sections {
+  margin-bottom: 0.85rem;
+}
+
+.modal__card--notifications .activity-list {
+  gap: 0.7rem;
+}
+
+.notification-list-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid rgba(92, 149, 255, 0.17);
+  background: linear-gradient(180deg, rgba(12, 21, 39, 0.92), rgba(7, 13, 26, 0.96));
+}
+
+.notification-list-item .activity-icon {
+  grid-column: 1;
+  grid-row: 1;
+  width: 36px;
+  height: 36px;
+}
+
+.notification-list-item .activity-copy {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  width: 100%;
+  gap: 0.2rem;
+}
+
+.notification-list-item .activity-copy strong,
+.notification-list-item .activity-copy small {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.notification-list-item .activity-copy small {
+  line-height: 1.4;
+}
+
+.notification-list-item .button {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: center;
+  width: auto;
+  max-width: 150px;
+  margin: 0;
+}
+
+.notification-section-heading {
+  margin-bottom: 0.65rem;
+}
+
+@media (max-width: 840px) {
+  .app-main {
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .topbar,
+  .connection-banner,
+  .bottom-nav {
+    flex: 0 0 auto;
+  }
+
+  .page-container {
+    flex: 1 0 auto;
+    width: 100%;
+    min-height: 0;
+    padding: 0.85rem 0.75rem calc(5.5rem + env(safe-area-inset-bottom));
+  }
+
+  .page-header {
+    min-height: 0;
+    height: auto;
+    margin-bottom: 0.9rem;
+    padding: 0.95rem;
+  }
+
+  .page-header h1 {
+    font-size: 1.8rem;
+  }
+
+  .page-header p {
+    margin-top: 0.35rem;
+    font-size: 0.9rem;
+  }
+
+  .section-block {
+    margin-top: 1.15rem;
+  }
+
+  .section-heading {
+    margin-bottom: 0.65rem;
+  }
+
+  .card-grid,
+  .request-list,
+  .activity-list,
+  .user-list,
+  .notification-sections {
+    gap: 0.7rem;
+  }
+
+  .simple-panel,
+  .request-card,
+  .session-card,
+  .audit-tools,
+  .profile-summary,
+  .profile-settings {
+    padding: 0.9rem;
+  }
+
+  .modal {
+    padding: calc(0.45rem + env(safe-area-inset-top)) 0.45rem calc(0.45rem + env(safe-area-inset-bottom));
+  }
+
+  .modal__card {
+    width: 100%;
+    max-height: calc(100dvh - 0.9rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    padding: 0.95rem;
+  }
+
+  .modal__header {
+    margin-bottom: 0.8rem;
+    padding-bottom: 0.75rem;
+  }
+
+  .modal__header h2 {
+    font-size: 1.55rem;
+  }
+
+  .modal__header .icon-button {
+    flex: 0 0 auto;
+    width: 42px;
+    height: 42px;
+  }
+
+  .modal__card--notifications [data-notification-panel] {
+    padding-right: 0.1rem;
+  }
+
+  .notification-list-item {
+    grid-template-columns: 36px minmax(0, 1fr);
+    gap: 0.65rem;
+    padding: 0.8rem;
+  }
+
+  .notification-list-item .activity-icon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .notification-list-item .button {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    max-width: none;
+    min-height: 42px;
+    margin: 0 !important;
+  }
+
+  .notification-list-item.is-unread {
+    padding-left: 0.8rem;
+    border-left-width: 2px;
+  }
+
+  .notification-section-heading h3 {
+    font-size: 1.05rem;
+  }
+
+  .notification-section-heading span {
+    min-width: 32px;
+    padding: 0.35rem 0.6rem;
+  }
+}
+
+@media (max-width: 620px) {
+  .access-screen--login,
+  .access-screen--register {
+    place-items: center;
+    padding: 0.45rem;
+  }
+
+  .access-screen--login .access-card,
+  .access-screen--register .access-card {
+    width: min(100%, 440px);
+    max-height: calc(100dvh - 0.9rem);
+    padding: 0.9rem;
+    gap: 0.55rem;
+  }
+
+  .access-screen--login .auth-card .simple-brand,
+  .access-screen--register .auth-card .simple-brand {
+    justify-content: center;
+    gap: 0.55rem;
+    padding-bottom: 0.6rem;
+  }
+
+  .access-screen--login .simple-brand .brand-mark,
+  .access-screen--register .simple-brand .brand-mark {
+    width: 42px;
+    height: 42px;
+  }
+
+  .access-screen--login .simple-brand strong,
+  .access-screen--register .simple-brand strong {
+    font-size: 1.15rem;
+    letter-spacing: 0.14em;
+  }
+
+  .access-screen--login .simple-brand small,
+  .access-screen--register .simple-brand small {
+    margin-top: 0.18rem;
+    font-size: 0.52rem;
+  }
+
+  .access-screen--login .access-copy,
+  .access-screen--register .access-copy {
+    margin: 0.35rem 0 0.15rem;
+    padding-right: 3.6rem;
+  }
+
+  .access-screen--login .access-copy::after,
+  .access-screen--register .access-copy::after {
+    top: -0.5rem;
+    width: 3.4rem;
+    height: 3.4rem;
+    opacity: 0.45;
+  }
+
+  .access-screen--login .system-tag,
+  .access-screen--register .system-tag {
+    margin-bottom: 0.25rem;
+    font-size: 0.62rem;
+  }
+
+  .access-screen--login .access-copy h1,
+  .access-screen--register .access-copy h1 {
+    margin-bottom: 0.2rem;
+    font-size: clamp(1.75rem, 9vw, 2.15rem);
+    line-height: 1.05;
+  }
+
+  .access-screen--login .access-copy p,
+  .access-screen--register .access-copy p {
+    margin: 0;
+    font-size: 0.88rem;
+    line-height: 1.35;
+  }
+
+  .access-screen--login .auth-form,
+  .access-screen--register .auth-form {
+    gap: 0.55rem;
+    margin-top: 0.15rem;
+  }
+
+  .access-screen--login .auth-form label,
+  .access-screen--register .auth-form label {
+    gap: 0.28rem;
+    font-size: 0.78rem;
+  }
+
+  .access-screen--login .auth-form input,
+  .access-screen--register .auth-form input {
+    min-height: 43px;
+    padding: 0.62rem 0.75rem;
+    font-size: 0.9rem;
+  }
+
+  .access-screen--login .auth-form input[type="password"],
+  .access-screen--register .auth-form input[type="password"] {
+    letter-spacing: normal;
+    font-size: 0.9rem;
+  }
+
+  .access-screen--login .remember-row {
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.55rem 0.65rem;
+  }
+
+  .access-screen--login .remember-row input {
+    width: 18px;
+    height: 18px;
+    min-height: 18px;
+    margin: 0;
+  }
+
+  .access-screen--login .remember-row strong {
+    font-size: 0.82rem;
+  }
+
+  .access-screen--login .auth-form .button,
+  .access-screen--register .auth-form .button {
+    min-height: 44px;
+    padding-block: 0.65rem;
+  }
+
+  .access-screen--login .forgot-pin-copy {
+    margin: 0.2rem 0 0;
+    font-size: 0.75rem;
+  }
+
+  .access-screen--login .auth-link-row,
+  .access-screen--register .auth-links {
+    margin-top: 0.2rem;
+    font-size: 0.82rem;
+  }
+
+  .access-screen--login .auth-link-row {
+    gap: 0;
+  }
+
+  /* Allow full names and records to wrap instead of ellipsizing. */
+  .leaderboard-row {
+    grid-template-columns: 32px 38px minmax(0, 1fr);
+    align-items: start;
+    gap: 0.55rem;
+  }
+
+  .leaderboard-player strong,
+  .leaderboard-player small {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .leaderboard-net {
+    grid-column: 3;
+    justify-self: start;
+    margin-top: 0.15rem;
+    white-space: normal;
+  }
+}
+
+@media (max-height: 620px) {
+  .access-screen--login,
+  .access-screen--register {
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+    place-items: center;
+  }
+
+  .access-screen--login .access-card,
+  .access-screen--register .access-card {
+    max-height: calc(100dvh - 0.9rem);
+    overflow-y: auto;
+  }
+}
+
+/* Final overflow containment adjustments */
+.sidebar {
+  overflow: hidden;
+}
+
+.access-screen--login .access-card::before,
+.access-screen--login .access-card::after,
+.access-screen--register .access-card::before,
+.access-screen--register .access-card::after {
+  display: none;
+}
+
+.access-screen--login .access-card,
+.access-screen--register .access-card {
+  scrollbar-gutter: auto;
+}
+
+@media (max-width: 840px) {
+  .modal__card--notifications {
+    max-height: calc(100dvh - 1.5rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-height: 720px) and (min-width: 841px) {
+  .sidebar {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .sidebar::after {
+    display: none;
   }
 }

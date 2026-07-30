@@ -192,3 +192,42 @@ test('realtime registration dialog supports review later', async () => {
   assert.match(main, /payload\?\.eventType === 'INSERT'/);
   assert.match(main, /routeAdminToPendingRequestsOnce/);
 });
+
+test('mobile auth and notification layouts use compact non-overlapping structures', async () => {
+  const { accountAccessView, modalTemplate } = await import('../src/components/templates.js');
+  const { readFile } = await import('node:fs/promises');
+  const login = accountAccessView({ mode: 'login' });
+  const register = accountAccessView({ mode: 'register' });
+  const notifications = modalTemplate('notifications', {
+    notifications: [{ id: 'n1', title: 'Table finished', message: 'You finished even.', created_at: new Date().toISOString(), read_at: null, delivery: 'final_result' }]
+  });
+
+  assert.match(login, /access-screen--login/);
+  assert.match(login, /Log in to continue\./);
+  assert.doesNotMatch(login, /Do not use this on a shared device/);
+  assert.match(register, /access-screen--register/);
+  assert.match(register, /Admin approval is required\./);
+  assert.match(notifications, /modal__card--notifications/);
+
+  const css = await readFile(new URL('../src/styles/main.css', import.meta.url), 'utf8');
+  assert.match(css, /RESPONSIVE STABILITY \+ MOBILE LAYOUT/);
+  assert.match(css, /grid-template-columns: 36px minmax\(0, 1fr\)/);
+  assert.match(css, /height: 100dvh/);
+  assert.match(css, /min-height: calc\(100dvh - 84px\)/);
+  assert.match(css, /leaderboard-player strong,[\s\S]*white-space: normal/);
+  assert.match(css, /access-screen--login \.access-card::before/);
+});
+
+test('installed app icons are opaque maskable PNGs', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const manifest = JSON.parse(await readFile(new URL('../manifest.webmanifest', import.meta.url), 'utf8'));
+  const pngIcons = manifest.icons.filter(icon => icon.type === 'image/png');
+  assert.equal(pngIcons.length, 2);
+  assert.ok(pngIcons.every(icon => icon.purpose.includes('maskable')));
+
+  for (const file of ['icon-192.png', 'icon-512.png', 'apple-touch-icon.png']) {
+    const bytes = await readFile(new URL(`../icons/${file}`, import.meta.url));
+    assert.equal(bytes.subarray(1, 4).toString('ascii'), 'PNG');
+    assert.equal(bytes[25], 2, `${file} should use opaque RGB color type`);
+  }
+});

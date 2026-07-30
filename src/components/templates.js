@@ -80,10 +80,10 @@ export function accountAccessView({ mode = 'login', profile = null } = {}) {
 
   if (mode === 'register') {
     return `
-      <main class="access-screen">
+      <main class="access-screen access-screen--register">
         <section class="access-card auth-card system-window">
           ${brand}
-          <div class="access-copy"><span class="system-tag">NEW PLAYER</span><h1>Create account</h1><p>An admin must approve it before you can log in.</p></div>
+          <div class="access-copy"><span class="system-tag">NEW PLAYER</span><h1>Create account</h1><p>Admin approval is required.</p></div>
           <form id="register-form" class="stack auth-form">
             <label>Username<input name="username" minlength="3" maxlength="20" pattern="[A-Za-z0-9_]+" required autocomplete="username" placeholder="mark_23" autofocus></label>
             <label>Email<input name="email" type="email" maxlength="254" required autocomplete="email" placeholder="mark@example.com"></label>
@@ -92,7 +92,7 @@ export function accountAccessView({ mode = 'login', profile = null } = {}) {
             ${formError()}
             <button class="button button--primary" type="submit">Submit for approval</button>
           </form>
-          <p class="auth-links">Already registered? <a href="#/login">Log in</a></p>
+          <p class="auth-links">Already have an account? <a href="#/login">Log in</a></p>
         </section>
       </main>`;
   }
@@ -127,18 +127,18 @@ export function accountAccessView({ mode = 'login', profile = null } = {}) {
   }
 
   return `
-    <main class="access-screen">
+    <main class="access-screen access-screen--login">
       <section class="access-card auth-card system-window">
         ${brand}
-        <div class="access-copy"><span class="system-tag">SYSTEM ONLINE</span><h1>Welcome back</h1><p>Enter your username or email and password.</p></div>
+        <div class="access-copy"><span class="system-tag">SYSTEM ONLINE</span><h1>Welcome back</h1><p>Log in to continue.</p></div>
         <form id="login-form" class="stack auth-form">
           <label>Username or email<input name="identifier" maxlength="254" required autocomplete="username" placeholder="Username or email" autofocus></label>
           <label>Password<input name="password" type="password" minlength="8" maxlength="64" required autocomplete="current-password" placeholder="Your password"></label>
-          <label class="remember-row"><input name="remember" type="checkbox"><span><strong>Remember me</strong><small>Do not use this on a shared device.</small></span></label>
+          <label class="remember-row"><input name="remember" type="checkbox"><span><strong>Remember me</strong></span></label>
           ${formError()}
           <button class="button button--primary" type="submit">Log in</button>
         </form>
-        <p class="forgot-pin-copy">Forgot your password? Ask the admin.</p>
+        <p class="forgot-pin-copy">Forgot password? Ask the admin.</p>
         <div class="auth-link-row">
           <a href="#/register">Create account</a>
         </div>
@@ -739,7 +739,7 @@ export function modalTemplate(type, context = {}) {
 
   const form = forms[type];
   if (!form) return '';
-  return `<dialog class="modal" id="active-modal"><div class="modal__card system-window"><div class="modal__header"><h2>${form.title}</h2><button class="icon-button" data-close-modal aria-label="Close">×</button></div>${form.body}</div></dialog>`;
+  return `<dialog class="modal modal--${type}" id="active-modal"><div class="modal__card system-window${type === 'notifications' ? ' modal__card--notifications' : ''}"><div class="modal__header"><h2>${form.title}</h2><button class="icon-button" data-close-modal aria-label="Close">×</button></div>${form.body}</div></dialog>`;
 }
 
 function moneyForm(id, label, button, confirmation = '') {
