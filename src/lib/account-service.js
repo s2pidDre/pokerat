@@ -199,7 +199,7 @@ export function subscribeToProfiles(onChange) {
   unsubscribeFromProfiles();
   profileChannel = supabase
     .channel('pokerat-profile-changes')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => onChange())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, payload => onChange(payload))
     .subscribe();
   return profileChannel;
 }

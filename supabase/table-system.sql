@@ -893,6 +893,59 @@ as $$
   update public.notifications set read_at = now() where id = p_notification_id and user_id = auth.uid();
 $$;
 
+create or replace function public.admin_delete_poker_table(
+  p_table_id uuid,
+  p_confirmation text
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  table_row public.poker_tables;
+  expected_confirmation text;
+begin
+  perform public.require_active_user();
+  if not public.is_active_admin() then raise exception 'Admin only.'; end if;
+
+  select * into table_row
+  from public.poker_tables
+  where id = p_table_id
+  for update;
+
+  if table_row.id is null then raise exception 'Table not found.'; end if;
+  if table_row.status not in ('closed', 'cancelled') then
+    raise exception 'Only finished or cancelled tables can be deleted.';
+  end if;
+
+  expected_confirmation := 'DELETE ' || table_row.session_code;
+  if upper(trim(coalesce(p_confirmation, ''))) <> expected_confirmation then
+    raise exception 'Type % exactly to continue.', expected_confirmation;
+  end if;
+
+  -- Keep one standalone deletion record after the table and its related rows cascade away.
+  insert into public.audit_logs(action, actor_id, table_id, target_type, target_id, details)
+  values (
+    'table_deleted',
+    auth.uid(),
+    null,
+    'table',
+    table_row.id,
+    jsonb_build_object(
+      'table_name', table_row.name,
+      'table_code', table_row.session_code,
+      'table_status', table_row.status,
+      'host_user_id', table_row.host_user_id,
+      'closed_at', table_row.closed_at,
+      'cancelled_at', table_row.cancelled_at
+    )
+  );
+
+  delete from public.poker_tables where id = table_row.id;
+end;
+$$;
+
 create or replace function public.admin_clear_activity()
 returns void
 language plpgsql
@@ -1142,6 +1195,7 @@ revoke all on function public.submit_session_report(uuid, text, text) from publi
 revoke all on function public.review_session_report(uuid, text, text) from public;
 revoke all on function public.mark_pokerat_notifications_read() from public;
 revoke all on function public.mark_pokerat_notification_read(uuid) from public;
+revoke all on function public.admin_delete_poker_table(uuid, text) from public;
 revoke all on function public.admin_clear_activity() from public;
 revoke all on function public.load_pokerat_state() from public;
 
@@ -1165,6 +1219,7 @@ grant execute on function public.submit_session_report(uuid, text, text) to auth
 grant execute on function public.review_session_report(uuid, text, text) to authenticated;
 grant execute on function public.mark_pokerat_notifications_read() to authenticated;
 grant execute on function public.mark_pokerat_notification_read(uuid) to authenticated;
+grant execute on function public.admin_delete_poker_table(uuid, text) to authenticated;
 grant execute on function public.admin_clear_activity() to authenticated, service_role;
 grant execute on function public.load_pokerat_state() to authenticated;
 

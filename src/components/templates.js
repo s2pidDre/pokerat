@@ -156,8 +156,9 @@ export function forcePasswordChangeView(profile) {
     </main>`;
 }
 
-export function appShell({ profile, isAdmin, route, content, notificationCount = 0 }) {
-  const page = route.replace(/^#\/?/, '').split('/')[0] || 'home';
+export function appShell({ profile, isAdmin, route, content, notificationCount = 0, connectionStatus = 'connected' }) {
+  const requestedPage = route.replace(/^#\/?/, '').split('/')[0] || 'home';
+  const page = requestedPage === 'audit' ? 'admin' : requestedPage;
   const nav = [
     ['home', '⌂', 'Home'],
     ['leaderboard', leaderboardIcon(), 'Leaderboard'],
@@ -170,6 +171,12 @@ export function appShell({ profile, isAdmin, route, content, notificationCount =
     <a href="#/${id}" class="nav-item ${page === id ? 'is-active' : ''}" aria-current="${page === id ? 'page' : 'false'}">
       <span class="nav-icon">${icon}</span><span>${label}</span>
     </a>`).join('');
+  const connectionBanner = connectionStatus === 'connected' ? '' : `
+    <div class="connection-banner connection-banner--${connectionStatus}" role="status" aria-live="polite">
+      <span class="connection-banner__dot" aria-hidden="true"></span>
+      <div><strong>${connectionStatus === 'disconnected' ? 'Connection lost' : 'Reconnecting…'}</strong><span>${connectionStatus === 'disconnected' ? 'Live updates are paused until Pokerat reconnects.' : 'Live updates may be delayed for a moment.'}</span></div>
+      <button class="button button--ghost button--small" type="button" data-refresh-realtime>Refresh data</button>
+    </div>`;
 
   return `
     <div class="app-layout">
@@ -190,6 +197,7 @@ export function appShell({ profile, isAdmin, route, content, notificationCount =
             <button data-logout class="button button--ghost button--small">Log out</button>
           </div>
         </header>
+        ${connectionBanner}
         <main class="page-container">${content}</main>
         <nav class="bottom-nav" aria-label="Mobile navigation">${navHtml}</nav>
       </div>
@@ -377,15 +385,8 @@ export function transactionList(transactions, isHost = false) {
 export function memberList(members, isHost, userId, session) {
   return `<div class="member-list">${members.map(member => {
     const menuId = `member-menu-${member.id}`;
-    return `<article class="member-item"><a class="player-mini-profile" href="#/player/${member.user_id}" aria-label="View ${escapeHtml(member.profile?.display_name || 'player')} profile"><span class="avatar">${initials(member.profile?.display_name)}</span><span><strong>${escapeHtml(member.profile?.display_name || 'Player')}${member.user_id === userId ? ' (You)' : ''}</strong><small>${member.member_role === 'host' ? 'Host' : 'Player'}</small></span></a>${isHost && member.user_id !== userId && ['lobby', 'active'].includes(session.status) ? `<button class="member-menu__trigger" data-member-menu-trigger aria-expanded="false" aria-controls="${menuId}" aria-label="Player actions">•••</button><div class="member-menu-popover" id="${menuId}" data-member-menu hidden><button data-transfer-host="${member.user_id}">Make host</button><button class="danger-text" data-remove-member="${member.user_id}">Remove</button></div>` : ''}</article>`;
+    return `<article class="member-item"><a class="player-mini-profile" href="#/player/${member.user_id}" data-player-origin="session/${session.id}" aria-label="View ${escapeHtml(member.profile?.display_name || 'player')} profile"><span class="avatar">${initials(member.profile?.display_name)}</span><span><strong>${escapeHtml(member.profile?.display_name || 'Player')}${member.user_id === userId ? ' (You)' : ''}</strong><small>${member.member_role === 'host' ? 'Host' : 'Player'}</small></span></a>${isHost && member.user_id !== userId && ['lobby', 'active'].includes(session.status) ? `<button class="member-menu__trigger" data-member-menu-trigger aria-expanded="false" aria-controls="${menuId}" aria-label="Player actions">•••</button><div class="member-menu-popover" id="${menuId}" data-member-menu hidden><button data-transfer-host="${member.user_id}">Make host</button><button class="danger-text" data-remove-member="${member.user_id}">Remove</button></div>` : ''}</article>`;
   }).join('')}</div>`;
-}
-
-export function requestsView({ requests, userId }) {
-  const all = allRequests(requests).sort((a, b) => new Date(b.requested_at) - new Date(a.requested_at));
-  const hostItems = all.filter(request => request.session?.host_user_id === userId && request.status?.startsWith('pending'));
-  const myItems = all.filter(request => (request.requester_id === userId || request.user_id === userId) && request.session?.host_user_id !== userId);
-  return `${pageHeader('Requests', 'Open the related table to handle requests.')}<section class="section-block"><div class="request-list">${hostItems.length ? hostItems.map(request => requestCard(request, true)).join('') : '<p class="empty-copy">No requests waiting.</p>'}</div></section>${myItems.length ? `<section class="section-block"><div class="section-heading"><h2>Your requests</h2></div><div class="request-list">${myItems.map(request => requestCard(request, false)).join('')}</div></section>` : ''}`;
 }
 
 export function requestCard(request, hostView) {
@@ -416,7 +417,7 @@ export function leaderboardView({ leaderboard = [], profileId, closedTableCount 
     if (entry.even) recordParts.push(`${entry.even} even`);
     recordParts.push(`${entry.tableCount} table${entry.tableCount === 1 ? '' : 's'}`);
     const netClass = entry.net > 0 ? 'positive' : entry.net < 0 ? 'negative' : '';
-    return `<a class="leaderboard-row ${entry.userId === profileId ? 'is-you' : ''}" href="#/player/${entry.userId}" aria-label="View ${escapeHtml(entry.displayName)} performance"><span class="leaderboard-rank">#${entry.rank}</span><span class="avatar leaderboard-avatar">${initials(entry.displayName)}</span><div class="leaderboard-player"><strong>${escapeHtml(entry.displayName)}${entry.userId === profileId ? ' <em>You</em>' : ''}</strong><small>${recordParts.join(' · ')}</small></div><strong class="leaderboard-net ${netClass}">${formatCurrency(entry.net, { signed: true })}</strong></a>`;
+    return `<a class="leaderboard-row ${entry.userId === profileId ? 'is-you' : ''}" href="#/player/${entry.userId}" data-player-origin="leaderboard" aria-label="View ${escapeHtml(entry.displayName)} performance"><span class="leaderboard-rank">#${entry.rank}</span><span class="avatar leaderboard-avatar">${initials(entry.displayName)}</span><div class="leaderboard-player"><strong>${escapeHtml(entry.displayName)}${entry.userId === profileId ? ' <em>You</em>' : ''}</strong><small>${recordParts.join(' · ')}</small></div><strong class="leaderboard-net ${netClass}">${formatCurrency(entry.net, { signed: true })}</strong></a>`;
   }).join('');
 
   return `
@@ -428,7 +429,7 @@ export function leaderboardView({ leaderboard = [], profileId, closedTableCount 
 }
 
 
-function performanceChart(points = []) {
+function performanceChart(points = [], baselineNet = 0) {
   if (!points.length) {
     return '<div class="performance-chart-empty"><span>⌁</span><strong>No performance data yet</strong><p>Closed tables will build this player’s trend.</p></div>';
   }
@@ -436,9 +437,9 @@ function performanceChart(points = []) {
   const width = 760;
   const height = 300;
   const padding = { top: 28, right: 28, bottom: 42, left: 62 };
-  const values = [0, ...points.map(point => Number(point.cumulativeNet) || 0)];
-  const rawMin = Math.min(...values);
-  const rawMax = Math.max(...values);
+  const values = [baselineNet, ...points.map(point => Number(point.cumulativeNet) || 0)];
+  const rawMin = Math.min(...values, 0);
+  const rawMax = Math.max(...values, 0);
   const spread = Math.max(1, rawMax - rawMin);
   const margin = Math.max(spread * 0.16, Math.max(Math.abs(rawMax), Math.abs(rawMin), 100) * 0.08);
   const min = rawMin - margin;
@@ -447,28 +448,41 @@ function performanceChart(points = []) {
   const chartHeight = height - padding.top - padding.bottom;
   const x = index => padding.left + (chartWidth * index / Math.max(1, points.length));
   const y = value => padding.top + ((max - value) / Math.max(1, max - min)) * chartHeight;
-  const coordinates = [{ x: x(0), y: y(0), value: 0 }, ...points.map((point, index) => ({ x: x(index + 1), y: y(point.cumulativeNet), value: point.cumulativeNet, point }))];
+  const coordinates = [{ x: x(0), y: y(baselineNet), value: baselineNet }, ...points.map((point, index) => ({ x: x(index + 1), y: y(point.cumulativeNet), value: point.cumulativeNet, point }))];
   const line = coordinates.map((coordinate, index) => `${index ? 'L' : 'M'} ${coordinate.x.toFixed(2)} ${coordinate.y.toFixed(2)}`).join(' ');
   const zeroY = y(0);
   const ticks = [max, (max + min) / 2, min];
 
   return `<div class="performance-chart-wrap">
-    <svg class="performance-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Cumulative performance across ${points.length} closed table${points.length === 1 ? '' : 's'}">
+    <svg class="performance-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Cumulative performance across ${points.length} displayed closed table${points.length === 1 ? '' : 's'}">
       ${ticks.map(value => `<g class="performance-grid"><line x1="${padding.left}" y1="${y(value).toFixed(2)}" x2="${width - padding.right}" y2="${y(value).toFixed(2)}"></line><text x="${padding.left - 10}" y="${(y(value) + 4).toFixed(2)}" text-anchor="end">${escapeHtml(formatCurrency(value, { signed: true }))}</text></g>`).join('')}
       <line class="performance-zero" x1="${padding.left}" y1="${zeroY.toFixed(2)}" x2="${width - padding.right}" y2="${zeroY.toFixed(2)}"></line>
       <path class="performance-line" d="${line}"></path>
-      ${coordinates.slice(1).map(({ x: cx, y: cy, point }) => `<circle class="performance-point performance-point--${point.outcome}" cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="7" role="img" aria-label="${escapeHtml(point.sessionName)}, ${point.outcome}, ${formatCurrency(point.net, { signed: true })}"><title>${escapeHtml(point.sessionName)}: ${formatCurrency(point.net, { signed: true })}; running total ${formatCurrency(point.cumulativeNet, { signed: true })}</title></circle>`).join('')}
-      <text class="performance-axis-label" x="${padding.left}" y="${height - 12}">Start</text>
-      <text class="performance-axis-label" x="${width - padding.right}" y="${height - 12}" text-anchor="end">${points.length} table${points.length === 1 ? '' : 's'}</text>
+      ${coordinates.slice(1).map(({ x: cx, y: cy, point }) => `<circle class="performance-point performance-point--${point.outcome}" cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="7" role="button" tabindex="0" data-performance-point data-session-name="${escapeHtml(point.sessionName)}" data-played-at="${escapeHtml(formatDateTime(point.playedAt))}" data-cash-in="${escapeHtml(formatCurrency(point.cashIn))}" data-cash-out="${escapeHtml(formatCurrency(point.cashOut))}" data-net="${escapeHtml(formatCurrency(point.net, { signed: true }))}" data-running-total="${escapeHtml(formatCurrency(point.cumulativeNet, { signed: true }))}" data-outcome="${escapeHtml(point.outcome)}" aria-label="Open ${escapeHtml(point.sessionName)} result details: ${formatCurrency(point.net, { signed: true })}"><title>${escapeHtml(point.sessionName)}: ${formatCurrency(point.net, { signed: true })}; running total ${formatCurrency(point.cumulativeNet, { signed: true })}</title></circle>`).join('')}
+      <text class="performance-axis-label" x="${padding.left}" y="${height - 12}">${baselineNet === 0 ? 'Start' : 'Before range'}</text>
+      <text class="performance-axis-label" x="${width - padding.right}" y="${height - 12}" text-anchor="end">${points.length} shown</text>
     </svg>
   </div>`;
 }
 
-export function playerProfileView({ player, performance, isCurrentUser = false }) {
+function performanceRangeButtons(activeRange, total) {
+  const options = [
+    ['10', 'Last 10'],
+    ['25', 'Last 25'],
+    ['all', 'All time']
+  ];
+  return `<div class="performance-range" role="group" aria-label="Performance graph range">${options.map(([value, label]) => `<button type="button" data-performance-range="${value}" class="${activeRange === value ? 'is-active' : ''}" aria-pressed="${activeRange === value}" ${value !== 'all' && total <= Number(value) ? 'disabled' : ''}>${label}</button>`).join('')}</div>`;
+}
+
+export function playerProfileView({ player, performance, isCurrentUser = false, graphRange = 'all', backRoute = 'leaderboard', backLabel = 'Back to leaderboard' }) {
   const netClass = performance.net > 0 ? 'positive' : performance.net < 0 ? 'negative' : '';
   const recent = [...performance.points].reverse().slice(0, 8);
+  const rangeCount = graphRange === 'all' ? performance.points.length : Math.min(Number(graphRange) || performance.points.length, performance.points.length);
+  const startIndex = Math.max(0, performance.points.length - rangeCount);
+  const visiblePoints = performance.points.slice(startIndex);
+  const baselineNet = startIndex > 0 ? Number(performance.points[startIndex - 1]?.cumulativeNet) || 0 : 0;
   return `
-    ${pageHeader('Player performance', 'Closed tables only.', '<a class="button button--ghost" href="#/leaderboard">Back to leaderboard</a>')}
+    ${pageHeader('Player performance', 'Closed tables only.', `<a class="button button--ghost" href="#/${escapeHtml(backRoute)}">${escapeHtml(backLabel)}</a>`)}
     <section class="player-profile-hero system-window">
       <span class="avatar avatar--large">${initials(player.display_name)}</span>
       <div><span class="system-tag">${player.is_admin ? 'ADMIN PLAYER' : 'PLAYER'}</span><h2>${escapeHtml(player.display_name)}${isCurrentUser ? ' <small>You</small>' : ''}</h2><p>@${escapeHtml(player.login_name || '')}</p></div>
@@ -480,9 +494,14 @@ export function playerProfileView({ player, performance, isCurrentUser = false }
       <article><span>Total net</span><strong class="${netClass}">${formatCurrency(performance.net, { signed: true })}</strong><small>Cash out − cash in</small></article>
       <article><span>Total cash out</span><strong>${formatCurrency(performance.cashOut)}</strong><small>Across all results</small></article>
     </section>
-    <section class="performance-panel system-window">
-      <div class="leaderboard-heading"><div><h2>Performance trend</h2><p>Running net after every closed table. Green points are wins; red points are losses.</p></div><span>${performance.tableCount} result${performance.tableCount === 1 ? '' : 's'}</span></div>
-      ${performanceChart(performance.points)}
+    <section class="performance-panel system-window" data-performance-panel>
+      <div class="leaderboard-heading performance-heading"><div><h2>Performance trend</h2><p>Running net after every closed table. Select a point for details.</p></div><span>${performance.tableCount} result${performance.tableCount === 1 ? '' : 's'}</span></div>
+      ${performanceRangeButtons(graphRange, performance.tableCount)}
+      ${performanceChart(visiblePoints, baselineNet)}
+      <div class="performance-point-detail" data-performance-point-detail hidden aria-live="polite">
+        <div><span class="performance-point-detail__outcome" data-point-outcome></span><div><strong data-point-title></strong><small data-point-date></small></div></div>
+        <dl><div><dt>Cash-in</dt><dd data-point-cash-in></dd></div><div><dt>Cash-out</dt><dd data-point-cash-out></dd></div><div><dt>Net result</dt><dd data-point-net></dd></div><div><dt>Running total</dt><dd data-point-running-total></dd></div></dl>
+      </div>
     </section>
     <section class="section-block">
       <div class="section-heading"><h2>Recent results</h2></div>
@@ -490,14 +509,35 @@ export function playerProfileView({ player, performance, isCurrentUser = false }
     </section>`;
 }
 
-export function historyView({ sessions, profileId }) {
+function historyCard(session, profileId, result = null, isAdmin = false) {
+  const own = session.host_user_id === profileId;
+  const resultPreview = session.status === 'closed' && result
+    ? `<div class="history-result-preview"><span>Your result</span><strong class="${Number(result.net) > 0 ? 'positive' : Number(result.net) < 0 ? 'negative' : ''}">${formatCurrency(result.net, { signed: true })}</strong><small>${session.duration_seconds ? formatDurationSeconds(session.duration_seconds) : 'Duration unavailable'}</small></div>`
+    : session.status === 'cancelled'
+      ? '<div class="history-result-preview is-cancelled"><span>Cancelled</span><small>No performance result recorded.</small></div>'
+      : '';
+  const deleteAction = isAdmin
+    ? `<button class="button button--danger button--small history-delete-button" type="button" data-delete-history-table="${session.id}" aria-label="Delete ${escapeHtml(session.name)} permanently">Delete table</button>`
+    : '';
+  return `<article class="session-card history-card system-window"><a class="history-card__link" href="#/session/${session.id}"><div class="session-card__top"><span class="status status--${session.status}">${statusLabel(session.status)}</span><span class="code">${escapeHtml(session.session_code)}</span></div><h3>${escapeHtml(session.name)}</h3><p>${own ? 'Created by you' : `Created by ${escapeHtml(session.host?.display_name || 'User')}`}</p>${sessionTimerMarkup(session, true)}${resultPreview}<span class="open-label">Open table →</span></a>${deleteAction}</article>`;
+}
+
+export function historyView({ sessions, profileId, results = [], filter = 'all', isAdmin = false }) {
   const finished = sessions.filter(session => ['closed', 'cancelled'].includes(session.status));
+  const filtered = filter === 'finished'
+    ? finished.filter(session => session.status === 'closed')
+    : filter === 'cancelled'
+      ? finished.filter(session => session.status === 'cancelled')
+      : finished;
+  const resultMap = new Map(results.filter(result => result.user_id === profileId).map(result => [result.session_id, result]));
   const description = finished.length
-    ? `${finished.length} finished table${finished.length === 1 ? '' : 's'}.`
+    ? `${finished.length} finished or cancelled table${finished.length === 1 ? '' : 's'}.`
     : 'Closed and cancelled tables will appear here.';
+  const filters = [['all', 'All'], ['finished', 'Finished'], ['cancelled', 'Cancelled']];
   return `
     ${pageHeader('History', description)}
-    <div class="card-grid">${finished.length ? finished.map(session => sessionCard(session, profileId)).join('') : emptyState('Nothing here yet', 'Finish or cancel a table to add it to your history.')}</div>`;
+    <div class="history-filters" role="group" aria-label="Filter table history">${filters.map(([value, label]) => `<button type="button" data-history-filter="${value}" class="${filter === value ? 'is-active' : ''}" aria-pressed="${filter === value}">${label}</button>`).join('')}</div>
+    <div class="card-grid">${filtered.length ? filtered.map(session => historyCard(session, profileId, resultMap.get(session.id), isAdmin)).join('') : emptyState('Nothing in this filter', filter === 'all' ? 'Finish or cancel a table to add it to your history.' : `No ${filter} tables yet.`)}</div>`;
 }
 
 function nameChangeAvailability(profile) {
@@ -520,7 +560,7 @@ export function profileView(profile) {
   const nameControl = nameChange.locked
     ? `<div class="profile-name-locked"><span>Display name</span><strong>${escapeHtml(profile.display_name)}</strong><small id="name-change-note">${escapeHtml(nameChange.message)}</small></div>`
     : `<form id="profile-form" class="stack profile-form"><label>Display name<input name="displayName" value="${escapeHtml(profile.display_name)}" maxlength="24" required aria-describedby="name-change-note"></label><p class="profile-cooldown" id="name-change-note">${escapeHtml(nameChange.message)}</p>${formError()}<button class="button button--primary" type="submit">Save name</button></form>`;
-  return `${pageHeader('Profile')}<section class="profile-grid"><article class="simple-panel profile-summary"><span class="avatar avatar--large">${initials(profile.display_name)}</span><h2>${escapeHtml(profile.display_name)}</h2><p>${profile.is_admin ? 'Admin' : 'User'}</p><small>@${escapeHtml(profile.login_name || '')}</small><a class="button button--ghost button--small" href="#/player/${profile.id}">View performance</a></article><article class="simple-panel profile-settings"><div class="stack">${nameControl}<div class="profile-account-info"><span>Email</span><strong>${escapeHtml(profile.email || 'No email')}</strong><small>Email is used for login and cannot be changed here.</small></div><button class="button button--secondary" type="button" data-open="change-password">Change password</button></div></article></section>`;
+  return `${pageHeader('Profile')}<section class="profile-grid"><article class="simple-panel profile-summary"><span class="avatar avatar--large">${initials(profile.display_name)}</span><h2>${escapeHtml(profile.display_name)}</h2><p>${profile.is_admin ? 'Admin' : 'User'}</p><small>@${escapeHtml(profile.login_name || '')}</small><a class="button button--ghost button--small" href="#/player/${profile.id}" data-player-origin="profile">View performance</a></article><article class="simple-panel profile-settings"><div class="stack">${nameControl}<div class="profile-account-info"><span>Email</span><strong>${escapeHtml(profile.email || 'No email')}</strong><small>Email is used for login and cannot be changed here.</small></div><button class="button button--secondary" type="button" data-open="change-password">Change password</button></div></article></section>`;
 }
 
 function auditDetailText(log) {
@@ -545,10 +585,33 @@ function adminUserActions(user, activeAdminId) {
   return `${statusButton}<button class="button button--ghost button--small" data-admin-reset-password="${user.id}">Reset password</button><button class="button button--danger button--small" data-admin-delete-user="${user.id}">Delete</button>`;
 }
 
-export function adminView(users = [], logs = [], reports = [], activeAdminId = '') {
+function adminReportCard(report) {
+  return `<article class="request-card"><div class="request-card__header"><div><h3>${escapeHtml(report.session_name)}</h3><p>${escapeHtml(report.reporter_name)} · ${formatRelative(report.created_at)}</p></div><span class="status status--${report.status}">${statusLabel(report.status)}</span></div><p>${escapeHtml(report.details)}</p>${['open', 'reviewing'].includes(report.status) ? `<div class="request-actions"><button class="button button--ghost" data-review-report="${report.id}" data-report-status="dismissed">Dismiss</button><button class="button button--secondary" data-review-report="${report.id}" data-report-status="reviewing">Reviewing</button><button class="button button--primary" data-review-report="${report.id}" data-report-status="resolved">Resolve</button></div>` : report.resolution_note ? `<p class="request-note">${escapeHtml(report.resolution_note)}</p>` : ''}</article>`;
+}
+
+function auditEntry(log) {
+  const detail = auditDetailText(log);
+  const tableLabel = log.session?.name || log.details?.table_name || '';
+  const tableCode = log.session?.session_code || log.details?.table_code || '';
+  const context = [tableLabel, tableCode].filter(Boolean).join(' · ');
+  return `<article class="activity-item audit-entry"><span class="activity-icon">↺</span><div class="activity-copy"><strong>${escapeHtml(log.action.replaceAll('_', ' '))}</strong><small>${escapeHtml(log.actor?.display_name || 'System')} · ${formatDateTime(log.created_at)}</small>${context ? `<em>${escapeHtml(context)}</em>` : ''}${detail ? `<em>${escapeHtml(detail)}</em>` : ''}</div></article>`;
+}
+
+export function adminView(users = [], logs = [], reports = [], activeAdminId = '', userControls = {}) {
   const openReports = reports.filter(report => ['open', 'reviewing'].includes(report.status));
+  const pastReports = reports.filter(report => ['resolved', 'dismissed'].includes(report.status));
   const pendingUsers = users.filter(user => user.account_status === 'pending' && !user.is_admin).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   const registeredUsers = users.filter(user => user.account_status !== 'pending');
+  const activeFilter = userControls.filter || 'all';
+  const search = String(userControls.search || '').trim().toLowerCase();
+  const matchesUser = user => {
+    const filterMatch = activeFilter === 'all' || (activeFilter === 'admins' ? user.is_admin : user.account_status === activeFilter);
+    const searchText = `${user.display_name || ''} ${user.login_name || ''} ${user.email || ''}`.toLowerCase();
+    return filterMatch && (!search || searchText.includes(search));
+  };
+  const visibleCount = registeredUsers.filter(matchesUser).length;
+  const userFilters = [['all', 'All'], ['active', 'Active'], ['suspended', 'Suspended'], ['rejected', 'Rejected'], ['admins', 'Admins']];
+  const latestLogs = logs.slice(0, 10);
   return `
     ${pageHeader('Admin', 'Approve accounts, review reports and manage app data.')}
     <section class="section-block" id="account-requests">
@@ -556,21 +619,46 @@ export function adminView(users = [], logs = [], reports = [], activeAdminId = '
       <div class="request-list">${pendingUsers.length ? pendingUsers.map(user => `<article class="request-card system-window"><div class="request-card__header"><div><h3>${escapeHtml(user.display_name)}</h3><p>@${escapeHtml(user.login_name)} · ${escapeHtml(user.email || 'No email')} · ${formatRelative(user.created_at)}</p></div><span class="status status--pending">Waiting</span></div><div class="request-actions"><button class="button button--danger" data-admin-registration-reject="${user.id}">Reject</button><button class="button button--primary" data-admin-registration-approve="${user.id}">Approve</button></div></article>`).join('') : '<p class="empty-copy">No accounts waiting.</p>'}</div>
     </section>
     <section class="section-block">
-      <div class="section-heading"><h2>Reports</h2><span>${openReports.length}</span></div>
-      <div class="request-list">${reports.length ? reports.map(report => `<article class="request-card"><div class="request-card__header"><div><h3>${escapeHtml(report.session_name)}</h3><p>${escapeHtml(report.reporter_name)} · ${formatRelative(report.created_at)}</p></div><span class="status status--${report.status}">${statusLabel(report.status)}</span></div><p>${escapeHtml(report.details)}</p>${['open', 'reviewing'].includes(report.status) ? `<div class="request-actions"><button class="button button--ghost" data-review-report="${report.id}" data-report-status="dismissed">Dismiss</button><button class="button button--secondary" data-review-report="${report.id}" data-report-status="reviewing">Reviewing</button><button class="button button--primary" data-review-report="${report.id}" data-report-status="resolved">Resolve</button></div>` : ''}</article>`).join('') : '<p class="empty-copy">No reports.</p>'}</div>
+      <div class="section-heading"><h2>Open reports</h2><span>${openReports.length}</span></div>
+      <div class="request-list">${openReports.length ? openReports.map(adminReportCard).join('') : '<p class="empty-copy">No open reports.</p>'}</div>
+      ${pastReports.length ? `<details class="simple-details admin-past-reports"><summary>Past reports <span>${pastReports.length}</span></summary><div class="details-body request-list">${pastReports.map(adminReportCard).join('')}</div></details>` : ''}
     </section>
     <section class="section-block">
-      <div class="section-heading"><h2>Registered users</h2><span>${registeredUsers.length}</span></div>
-      <div class="user-list">${registeredUsers.map(user => `<article class="user-row"><a class="player-mini-profile" href="#/player/${user.id}"><span class="avatar">${initials(user.display_name)}</span><span><strong>${escapeHtml(user.display_name)}</strong><small>@${escapeHtml(user.login_name || '')} · ${escapeHtml(user.email || 'No email')} · ${accountStatusLabel(user.account_status)}${user.must_change_password ? ' · Temporary password' : ''}</small></span></a><div class="user-row__actions">${adminUserActions(user, activeAdminId)}</div></article>`).join('')}</div>
+      <div class="section-heading"><h2>Registered users</h2><span data-admin-user-count>${visibleCount} of ${registeredUsers.length}</span></div>
+      <div class="admin-user-tools"><label class="admin-user-search"><span class="sr-only">Search registered users</span><input type="search" data-admin-user-search value="${escapeHtml(userControls.search || '')}" placeholder="Search name, username or email"></label><div class="admin-user-filters" role="group" aria-label="Filter registered users">${userFilters.map(([value, label]) => `<button type="button" data-admin-user-filter="${value}" class="${activeFilter === value ? 'is-active' : ''}" aria-pressed="${activeFilter === value}">${label}</button>`).join('')}</div></div>
+      <div class="user-list" data-admin-user-list>${registeredUsers.map(user => { const visible = matchesUser(user); const searchText = `${user.display_name || ''} ${user.login_name || ''} ${user.email || ''}`.toLowerCase(); return `<article class="user-row" data-admin-user-row data-search="${escapeHtml(searchText)}" data-status="${escapeHtml(user.account_status)}" data-is-admin="${user.is_admin ? 'true' : 'false'}" ${visible ? '' : 'hidden'}><a class="player-mini-profile" href="#/player/${user.id}" data-player-origin="admin"><span class="avatar">${initials(user.display_name)}</span><span><strong>${escapeHtml(user.display_name)}</strong><small>@${escapeHtml(user.login_name || '')} · ${escapeHtml(user.email || 'No email')} · ${accountStatusLabel(user.account_status)}${user.must_change_password ? ' · Temporary password' : ''}</small></span></a><div class="user-row__actions">${adminUserActions(user, activeAdminId)}</div></article>`; }).join('')}<p class="empty-copy admin-user-empty" data-admin-user-empty ${visibleCount ? 'hidden' : ''}>No users match this search and filter.</p></div>
     </section>
     <section class="section-block">
-      <div class="section-heading"><h2>Data</h2><span>Admin only</span></div>
+      <div class="section-heading"><h2>Data</h2><span class="section-heading__badge section-heading__badge--text">Admin only</span></div>
       <div class="card-grid admin-data-grid">
         <article class="simple-panel admin-data-card"><div><h3>Clear activity</h3><p>Delete tables, money records, requests, notifications, reports and audit logs. Registered users stay.</p></div><button class="button button--danger" data-admin-clear-activity>Clear activity</button></article>
       </div>
     </section>
-    <details class="danger-zone"><summary>Danger zone</summary><div class="danger-zone__body"><div><h3>Hard reset Pokerat</h3><p>Delete every registered user and all activity. The app returns to first-time administrator setup.</p></div><button class="button button--danger" data-open="hard-reset">Hard reset everything</button></div></details>
-    <details class="simple-details"><summary>Audit log</summary><div class="details-body activity-list">${logs.length ? logs.map(log => `<article class="activity-item"><span class="activity-icon">↺</span><div class="activity-copy"><strong>${escapeHtml(log.action.replaceAll('_', ' '))}</strong><small>${escapeHtml(log.actor?.display_name || 'System')} · ${formatDateTime(log.created_at)}</small>${auditDetailText(log) ? `<em>${escapeHtml(auditDetailText(log))}</em>` : ''}</div></article>`).join('') : '<p class="empty-copy">No audit records.</p>'}</div></details>`;
+    <section class="section-block audit-preview">
+      <div class="section-heading"><div><h2>Recent audit activity</h2><p>Latest ${Math.min(logs.length, 10)} of ${logs.length} records.</p></div><a class="button button--secondary button--small" href="#/audit">View full audit log</a></div>
+      <div class="activity-list">${latestLogs.length ? latestLogs.map(auditEntry).join('') : '<p class="empty-copy">No audit records.</p>'}</div>
+    </section>
+    <details class="danger-zone"><summary>Danger zone</summary><div class="danger-zone__body"><div><h3>Hard reset Pokerat</h3><p>Delete every registered user and all activity. The app returns to first-time administrator setup.</p></div><button class="button button--danger" data-open="hard-reset">Hard reset everything</button></div></details>`;
+}
+
+export function auditLogView({ logs = [], controls = {}, totalCount = 0 }) {
+  const categories = [['all', 'All'], ['accounts', 'Accounts'], ['tables', 'Tables'], ['money', 'Money'], ['reports', 'Reports'], ['administration', 'Administration']];
+  const ranges = [['all', 'All time'], ['today', 'Today'], ['7', '7 days'], ['30', '30 days'], ['custom', 'Custom']];
+  const visibleCount = Number(controls.visibleCount) || 25;
+  const visibleLogs = logs.slice(0, visibleCount);
+  return `
+    ${pageHeader('Audit log', `${totalCount} record${totalCount === 1 ? '' : 's'} match the current filters.`, '<a class="button button--ghost button--small" href="#/admin">← Back to Admin</a><button class="button button--secondary button--small" type="button" data-export-audit>Export CSV</button>')}
+    <section class="simple-panel audit-tools">
+      <label class="audit-search"><span>Search records</span><input type="search" data-audit-search value="${escapeHtml(controls.search || '')}" placeholder="Player, admin, table or action"></label>
+      <div><span class="audit-tool-label">Category</span><div class="audit-filter-row" role="group" aria-label="Filter audit category">${categories.map(([value, label]) => `<button type="button" data-audit-category="${value}" class="${controls.category === value ? 'is-active' : ''}" aria-pressed="${controls.category === value}">${label}</button>`).join('')}</div></div>
+      <div><span class="audit-tool-label">Date</span><div class="audit-filter-row" role="group" aria-label="Filter audit date">${ranges.map(([value, label]) => `<button type="button" data-audit-range="${value}" class="${controls.range === value ? 'is-active' : ''}" aria-pressed="${controls.range === value}">${label}</button>`).join('')}</div></div>
+      ${controls.range === 'custom' ? `<div class="audit-custom-dates"><label>From<input type="date" data-audit-from value="${escapeHtml(controls.from || '')}"></label><label>To<input type="date" data-audit-to value="${escapeHtml(controls.to || '')}"></label></div>` : ''}
+    </section>
+    <section class="section-block">
+      <div class="section-heading"><h2>Records</h2><span>${visibleLogs.length} of ${totalCount}</span></div>
+      <div class="activity-list audit-full-list">${visibleLogs.length ? visibleLogs.map(auditEntry).join('') : '<p class="empty-copy">No audit records match these filters.</p>'}</div>
+      ${totalCount > visibleLogs.length ? '<button class="button button--secondary audit-load-more" type="button" data-audit-load-more>Load 25 more</button>' : ''}
+    </section>`;
 }
 
 export function modalTemplate(type, context = {}) {
@@ -625,7 +713,11 @@ export function modalTemplate(type, context = {}) {
       title: 'Hard reset Pokerat',
       body: `<form id="hard-reset-form" class="stack"><div class="simple-notice warning"><strong>This deletes everything.</strong><span>All accounts, tables and activity will be permanently removed.</span></div><label>Type RESET POKERAT to continue<input name="confirmation" autocomplete="off" required placeholder="RESET POKERAT"></label>${formError()}<button class="button button--danger" type="submit">Delete everything</button></form>`
     },
-    notifications: { title: 'Notifications', body: notificationList(context.notifications || []) }
+    'delete-history-table': {
+      title: 'Delete table permanently',
+      body: `<form id="delete-history-table-form" class="stack"><input type="hidden" name="tableId" value="${escapeHtml(context.tableId || '')}"><div class="simple-notice warning"><strong>${escapeHtml(context.tableName || 'Finished table')}</strong><span>This removes the table, members, money records, results, reports and related notifications. Leaderboard and performance totals will change.</span></div><label>Type DELETE ${escapeHtml(context.tableCode || '')}<input name="confirmation" autocomplete="off" required placeholder="DELETE ${escapeHtml(context.tableCode || '')}"></label>${formError()}<div class="modal__actions"><button class="button button--ghost" type="button" data-close-modal>Cancel</button><button class="button button--danger" type="submit">Delete table</button></div></form>`
+    },
+    notifications: { title: 'Notifications', body: `<div data-notification-panel>${notificationList(context.notifications || [])}</div>` }
   };
 
   const form = forms[type];
@@ -653,11 +745,13 @@ function closedSummary(session, transactions) {
 function notificationItem(item) {
   const unread = !item.read_at;
   const actionLabel = item.delivery === 'final_result' ? 'View result' : item.action_hash ? 'Open table' : unread ? 'Mark read' : '';
-  const action = actionLabel ? `<button class="button button--ghost button--small" type="button" data-open-notification="${item.id}">${actionLabel}</button>` : '';
-  return `<article class="activity-item notification-list-item ${unread ? 'is-unread' : 'is-read'}"><span class="activity-icon">${unread ? '!' : '✓'}</span><div class="activity-copy"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.message)} · ${formatRelative(item.created_at)}</small></div>${action}</article>`;
+  const action = !actionLabel ? '' : unread && !item.action_hash && item.delivery !== 'final_result'
+    ? `<button class="button button--ghost button--small" type="button" data-mark-notification-read="${item.id}">Mark read</button>`
+    : `<button class="button button--ghost button--small" type="button" data-open-notification="${item.id}">${actionLabel}</button>`;
+  return `<article class="activity-item notification-list-item ${unread ? 'is-unread' : 'is-read'}" data-notification-item="${item.id}"><span class="activity-icon">${unread ? '!' : '✓'}</span><div class="activity-copy"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.message)} · ${formatRelative(item.created_at)}</small></div>${action}</article>`;
 }
 
-function notificationList(notifications) {
+export function notificationList(notifications) {
   if (!notifications.length) return '<p class="empty-copy">No notifications yet.</p>';
   const unread = notifications.filter(item => !item.read_at);
   const recent = notifications.filter(item => item.read_at).slice(0, 12);

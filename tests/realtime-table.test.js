@@ -77,3 +77,35 @@ test('player performance builds a closed-table win and loss trend', async () => 
   assert.deepEqual(performance.points.map(point => point.cumulativeNet), [300, 100, 100]);
   assert.deepEqual(performance.points.map(point => point.outcome), ['win', 'loss', 'even']);
 });
+
+test('realtime banner and removed requests route are wired into the interface', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const { appShell } = await import('../src/components/templates.js');
+  const shell = appShell({
+    profile: { display_name: 'Player' },
+    isAdmin: false,
+    route: '#/home',
+    content: '',
+    connectionStatus: 'disconnected'
+  });
+  assert.match(shell, /Connection lost/);
+  assert.match(shell, /data-refresh-realtime/);
+
+  const main = await readFile(new URL('../src/main.js', import.meta.url), 'utf8');
+  const templates = await readFile(new URL('../src/components/templates.js', import.meta.url), 'utf8');
+  assert.match(main, /data-performance-range/);
+  assert.match(main, /data-history-filter/);
+  assert.match(main, /data-mark-notification-read/);
+  assert.doesNotMatch(main, /case 'requests'/);
+  assert.doesNotMatch(templates, /export function requestsView/);
+});
+
+test('admin can permanently delete only finished tables through a protected RPC', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const sql = await readFile(new URL('../supabase/table-system.sql', import.meta.url), 'utf8');
+  assert.match(sql, /admin_delete_poker_table/);
+  assert.match(sql, /table_row\.status not in \('closed', 'cancelled'\)/);
+  assert.match(sql, /expected_confirmation := 'DELETE ' \|\| table_row\.session_code/);
+  assert.match(sql, /'table_deleted'/);
+  assert.match(sql, /grant execute on function public\.admin_delete_poker_table\(uuid, text\) to authenticated/);
+});

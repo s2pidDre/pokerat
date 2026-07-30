@@ -132,6 +132,13 @@ export function clearRemoteActivity() {
   return rpc('admin_clear_activity');
 }
 
+export function deletePokerTable(tableId, confirmation) {
+  return rpc('admin_delete_poker_table', {
+    p_table_id: tableId,
+    p_confirmation: String(confirmation || '').trim().toUpperCase()
+  });
+}
+
 export function subscribeToPokeratActivity(onChange, onStatus = () => {}) {
   unsubscribeFromPokeratActivity();
   const tables = [

@@ -431,6 +431,13 @@ export function showAdminRegistrationApprovalDialog({
 
   const card = document.createElement('section');
   card.className = 'admin-registration-queue__card system-window';
+  const dismiss = document.createElement('button');
+  dismiss.type = 'button';
+  dismiss.className = 'icon-button admin-registration-queue__dismiss';
+  dismiss.dataset.adminRegistrationReviewLater = userId;
+  dismiss.setAttribute('aria-label', 'Review this request later');
+  dismiss.textContent = '×';
+  card.appendChild(dismiss);
   appendTextElement(card, 'p', `ACCOUNT ${queuePosition} OF ${queueTotal}`, 'host-buyin-queue__progress');
   appendTextElement(card, 'span', '●', 'admin-registration-queue__icon').setAttribute('aria-hidden', 'true');
   const title = appendTextElement(card, 'h2', 'New account request');
@@ -439,7 +446,7 @@ export function showAdminRegistrationApprovalDialog({
   appendTextElement(card, 'p', `@${loginName}`, 'admin-registration-queue__username');
   if (email) appendTextElement(card, 'p', email, 'admin-registration-queue__username');
   appendTextElement(card, 'p', requestedText, 'admin-registration-queue__time');
-  appendTextElement(card, 'p', 'Approve this friend so they can log in.', 'host-buyin-queue__instruction');
+  appendTextElement(card, 'p', 'Approve now or leave it in Admin for later review.', 'host-buyin-queue__instruction');
 
   const reasonLabel = document.createElement('label');
   reasonLabel.className = 'host-buyin-queue__reason';
@@ -459,7 +466,13 @@ export function showAdminRegistrationApprovalDialog({
   error.hidden = true;
 
   const actions = document.createElement('div');
-  actions.className = 'host-buyin-queue__actions';
+  actions.className = 'host-buyin-queue__actions admin-registration-queue__actions';
+
+  const laterButton = document.createElement('button');
+  laterButton.type = 'button';
+  laterButton.className = 'button button--ghost';
+  laterButton.dataset.adminRegistrationReviewLater = userId;
+  laterButton.textContent = 'Review later';
 
   const rejectButton = document.createElement('button');
   rejectButton.type = 'button';
@@ -471,20 +484,19 @@ export function showAdminRegistrationApprovalDialog({
   approveButton.type = 'button';
   approveButton.className = 'button button--primary';
   approveButton.dataset.adminRegistrationApprove = userId;
-  approveButton.textContent = 'Approve account';
+  approveButton.textContent = 'Approve';
 
-  actions.append(rejectButton, approveButton);
+  actions.append(laterButton, rejectButton, approveButton);
   card.appendChild(actions);
   dialog.appendChild(card);
   document.body.appendChild(dialog);
 
-  dialog.addEventListener('cancel', event => event.preventDefault());
+  dialog.addEventListener('cancel', event => {
+    event.preventDefault();
+    laterButton.click();
+  });
   dialog.addEventListener('click', event => {
-    if (event.target === dialog) {
-      card.classList.remove('needs-action');
-      requestAnimationFrame(() => card.classList.add('needs-action'));
-      triggerHapticFeedback('warning', { force: true });
-    }
+    if (event.target === dialog) laterButton.click();
   });
   dialog.addEventListener('close', () => dialog.remove(), { once: true });
 
