@@ -27,8 +27,6 @@ This creates the shared database for:
 - Transactions
 - Notifications
 - Closed-session results
-- Reports
-- Audit logs
 - Atomic table actions
 - Row Level Security
 - Realtime publications
@@ -103,8 +101,6 @@ money_requests
 transactions
 notifications
 session_results
-session_reports
-audit_logs
 ```
 
 The SQL normally enables them automatically.
@@ -125,3 +121,9 @@ Keep `main` unchanged until the complete two-account workflow passes.
 ## Updating the table rules
 
 Re-run `supabase/table-system.sql` after applying this update. It adds the single globally open table rule, makes the open table discoverable to every approved account, and keeps closed-table history private to participants and administrators.
+
+## Admin maintenance actions
+
+After replacing the updated files, redeploy the `admin-account` Edge Function. Clear Activity and Hard Reset use this server-side function and the `admin_clear_activity` database RPC.
+
+The retired Reports and Audit Log systems are removed when the updated `supabase/table-system.sql` is run.

@@ -15,6 +15,28 @@ const notificationIcon = () => `
     <path class="system-notification-icon__rune" d="m12 5.2 1.2 1.5-1.2 1.5-1.2-1.5Z" />
   </svg>`;
 const brandMark = () => `<span class="brand-mark" aria-hidden="true"><img class="brand-mark__img" src="./icons/logo-mark.svg" alt=""></span>`;
+const systemIcon = (name, className = '') => {
+  const paths = {
+    home: '<path d="M3.5 10.2 12 3l8.5 7.2v9.3H14v-5h-4v5H3.5z"/>',
+    history: '<path d="M4 7.2V3.8m0 0h3.4M4 3.8A9 9 0 1 1 3 14"/><path d="M12 7v5l3.2 1.8"/>',
+    profile: '<circle cx="12" cy="8" r="3.4"/><path d="M5.2 20c.6-4 3-6.1 6.8-6.1S18.2 16 18.8 20"/>',
+    admin: '<path d="m12 2.8 7.2 3v5.5c0 4.6-2.8 8-7.2 9.9-4.4-1.9-7.2-5.3-7.2-9.9V5.8z"/><path d="m9.2 12 1.8 1.8 3.9-4"/>',
+    create: '<path d="M12 5v14M5 12h14"/><path d="M4 4h16v16H4z"/>',
+    join: '<path d="M4 12h11m-4-4 4 4-4 4"/><path d="M15 5h5v14h-5"/>',
+    more: '<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>',
+    close: '<path d="m6 6 12 12M18 6 6 18"/>',
+    cashin: '<path d="M12 4v16M7 9l5-5 5 5"/><path d="M5 20h14"/>',
+    cashout: '<path d="M12 4v16m-5-5 5 5 5-5"/><path d="M5 4h14"/>',
+    correction: '<path d="M5 7h9a5 5 0 1 1-4.7 6.7"/><path d="m5 7 3-3M5 7l3 3"/>',
+    check: '<path d="m5 12.5 4.1 4.1L19 6.8"/>',
+    alert: '<path d="M12 3 2.8 20h18.4z"/><path d="M12 9v4.5M12 17h.01"/>',
+    chevron: '<path d="m8 10 4 4 4-4"/>',
+    trophy: '<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H4v1a4 4 0 0 0 4 4m8-5h4v1a4 4 0 0 1-4 4M12 13v4m-4 3h8"/>',
+    lightning: '<path d="m13.3 2-7 11h5l-.6 9 7-12h-5z"/>'
+  };
+  const body = paths[name] || paths.alert;
+  return `<svg class="system-icon ${escapeHtml(className)}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${body}</svg>`;
+};
 const statusLabel = value => ({
   lobby: 'Waiting to start',
   active: 'Playing',
@@ -102,7 +124,7 @@ export function accountAccessView({ mode = 'login', profile = null } = {}) {
       <main class="access-screen">
         <section class="access-card auth-card system-window auth-status-card">
           ${brand}
-          <span class="auth-status-icon">⌛</span>
+          <span class="auth-status-icon">${systemIcon('history')}</span>
           <span class="system-tag">WAITING</span>
           <h1>Waiting for approval</h1>
           <p>${profile ? `Your account <strong>@${escapeHtml(profile.login_name || '')}</strong> is waiting for an admin.` : 'An admin must approve your account before you can enter.'}</p>
@@ -117,7 +139,7 @@ export function accountAccessView({ mode = 'login', profile = null } = {}) {
       <main class="access-screen">
         <section class="access-card auth-card system-window auth-status-card">
           ${brand}
-          <span class="auth-status-icon">×</span>
+          <span class="auth-status-icon">${systemIcon('close')}</span>
           <span class="system-tag">NOT APPROVED</span>
           <h1>Registration rejected</h1>
           <p>${profile?.status_note ? escapeHtml(profile.status_note) : 'Ask an admin if you believe this was a mistake.'}</p>
@@ -163,25 +185,29 @@ export function forcePasswordChangeView(profile) {
     </main>`;
 }
 
+export function loadingSkeletonView() {
+  return `<div class="loading-shell" aria-label="Loading Pokerat" aria-busy="true">
+    <aside class="loading-shell__sidebar"><div class="skeleton skeleton--logo"></div>${Array.from({ length: 5 }, () => '<div class="skeleton skeleton--nav"></div>').join('')}</aside>
+    <main class="loading-shell__main"><div class="loading-shell__top"><div class="skeleton skeleton--title"></div><div class="skeleton skeleton--icon"></div></div><div class="loading-shell__content"><div class="skeleton skeleton--hero"></div><div class="loading-shell__grid">${Array.from({ length: 4 }, () => '<div class="skeleton skeleton--card"></div>').join('')}</div></div></main>
+  </div>`;
+}
+
 export function appShell({ profile, isAdmin, route, content, notificationCount = 0, connectionStatus = 'connected' }) {
   const page = route.replace(/^#\/?/, '').split('/')[0] || 'home';
   const nav = [
-    ['home', '⌂', 'Home'],
+    ['home', systemIcon('home'), 'Home'],
     ['leaderboard', leaderboardIcon(), 'Leaderboard'],
-    ['history', '↺', 'History'],
-    ['profile', '●', 'Profile']
+    ['history', systemIcon('history'), 'History'],
+    ['profile', systemIcon('profile'), 'Profile']
   ];
-  if (isAdmin) {
-    nav.push(['admin', '⚙', 'Admin']);
-    nav.push(['audit', '▤', 'Audit log']);
-  }
+  if (isAdmin) nav.push(['admin', systemIcon('admin'), 'Admin']);
 
   const navItems = items => items.map(([id, icon, label]) => `
     <a href="#/${id}" class="nav-item ${page === id ? 'is-active' : ''}" aria-current="${page === id ? 'page' : 'false'}">
       <span class="nav-icon">${icon}</span><span>${label}</span>
     </a>`).join('');
   const desktopNavHtml = navItems(nav);
-  const mobileNavHtml = navItems(nav.filter(([id]) => id !== 'audit'));
+  const mobileNavHtml = navItems(nav);
   const connectionLabel = connectionStatus === 'connected' ? 'Connected' : connectionStatus === 'disconnected' ? 'Connection lost' : 'Reconnecting…';
   const connectionBanner = connectionStatus === 'connected' ? '' : `
     <div class="connection-banner connection-banner--${connectionStatus}" role="status" aria-live="polite">
@@ -232,8 +258,8 @@ export function homeView({ sessions, requests, profile }) {
 
   const startActions = !openSession ? `
     <section class="big-actions">
-      <button class="big-action big-action--primary" data-open="create-session"><span>＋</span><strong>Create table</strong></button>
-      <button class="big-action" data-open="join-session"><span>⌕</span><strong>Join by code</strong></button>
+      <button class="big-action big-action--primary" data-open="create-session"><span>${systemIcon('create')}</span><strong>Create table</strong></button>
+      <button class="big-action" data-open="join-session"><span>${systemIcon('join')}</span><strong>Join by code</strong></button>
     </section>` : '';
 
   return `
@@ -336,7 +362,7 @@ export function sessionView({ session, members, transactions, requests, userId }
           </section>
           <section class="playing-detail-section playing-detail-actions">
             <p><strong>Table owner:</strong> ${escapeHtml(session.host?.display_name || 'User')}</p>
-            <div class="detail-buttons"><button class="button button--ghost button--small" data-open="report-session">Report</button>${isHost ? '<button class="button button--ghost button--small" data-export-session>Export CSV</button>' : ''}</div>
+            <div class="detail-buttons">${isHost ? '<button class="button button--ghost button--small" data-export-session>Export CSV</button>' : ''}</div>
           </section>
         </div>
       </details>`;
@@ -381,7 +407,7 @@ export function sessionView({ session, members, transactions, requests, userId }
       <summary>More details</summary>
       <div class="details-body details-actions">
         <p><strong>Table owner:</strong> ${escapeHtml(session.host?.display_name || 'User')}</p>
-        <div class="detail-buttons"><button class="button button--ghost button--small" data-open="report-session">Report</button>${isHost ? '<button class="button button--ghost button--small" data-export-session>Export CSV</button>' : ''}</div>
+        <div class="detail-buttons">${isHost ? '<button class="button button--ghost button--small" data-export-session>Export CSV</button>' : ''}</div>
       </div>
     </details>`;
 
@@ -395,14 +421,14 @@ export function transactionList(transactions, isHost = false) {
     const isReversal = transaction.transaction_type === 'reversal';
     const reversed = transaction.is_reversed && !isReversal;
     const label = isBuyIn ? 'Cash-in' : isCashOut ? 'Cash-out' : isReversal ? 'Correction' : 'Adjustment';
-    return `<article class="activity-item ${reversed ? 'is-reversed' : ''}"><span class="activity-icon">${isBuyIn ? '＋' : isCashOut ? '−' : '↺'}</span><div class="activity-copy"><strong>${escapeHtml(transaction.player?.display_name || 'System')}</strong><small>${label} · ${formatRelative(transaction.created_at)}</small>${transaction.correction_reason ? `<em>${escapeHtml(transaction.correction_reason)}</em>` : ''}</div><div class="activity-amount"><strong>${formatCurrency(transaction.amount)}</strong>${isHost && !reversed && !isReversal && (isBuyIn || isCashOut) ? `<button class="text-button" data-correct-transaction="${transaction.id}" data-amount="${transaction.amount}" data-type="${transaction.transaction_type}">Fix</button>` : ''}</div></article>`;
+    return `<article class="activity-item ${reversed ? 'is-reversed' : ''}"><span class="activity-icon">${isBuyIn ? systemIcon('cashin') : isCashOut ? systemIcon('cashout') : systemIcon('correction')}</span><div class="activity-copy"><strong>${escapeHtml(transaction.player?.display_name || 'System')}</strong><small>${label} · ${formatRelative(transaction.created_at)}</small>${transaction.correction_reason ? `<em>${escapeHtml(transaction.correction_reason)}</em>` : ''}</div><div class="activity-amount"><strong>${formatCurrency(transaction.amount)}</strong>${isHost && !reversed && !isReversal && (isBuyIn || isCashOut) ? `<button class="text-button" data-correct-transaction="${transaction.id}" data-amount="${transaction.amount}" data-type="${transaction.transaction_type}">Fix</button>` : ''}</div></article>`;
   }).join('')}</div>`;
 }
 
 export function memberList(members, isHost, userId, session) {
   return `<div class="member-list">${members.map(member => {
     const menuId = `member-menu-${member.id}`;
-    return `<article class="member-item"><a class="player-mini-profile" href="#/player/${member.user_id}" data-player-origin="session/${session.id}" aria-label="View ${escapeHtml(member.profile?.display_name || 'player')} profile"><span class="avatar">${initials(member.profile?.display_name)}</span><span><strong>${escapeHtml(member.profile?.display_name || 'Player')}${member.user_id === userId ? ' (You)' : ''}</strong><small>${member.member_role === 'host' ? 'Host' : 'Player'}</small></span></a>${isHost && member.user_id !== userId && ['lobby', 'active'].includes(session.status) ? `<button class="member-menu__trigger" data-member-menu-trigger aria-expanded="false" aria-controls="${menuId}" aria-label="Player actions">•••</button><div class="member-menu-popover" id="${menuId}" data-member-menu hidden><button data-transfer-host="${member.user_id}">Make host</button><button class="danger-text" data-remove-member="${member.user_id}">Remove</button></div>` : ''}</article>`;
+    return `<article class="member-item"><a class="player-mini-profile" href="#/player/${member.user_id}" data-player-origin="session/${session.id}" aria-label="View ${escapeHtml(member.profile?.display_name || 'player')} profile"><span class="avatar">${initials(member.profile?.display_name)}</span><span><strong>${escapeHtml(member.profile?.display_name || 'Player')}${member.user_id === userId ? ' (You)' : ''}</strong><small>${member.member_role === 'host' ? 'Host' : 'Player'}</small></span></a>${isHost && member.user_id !== userId && ['lobby', 'active'].includes(session.status) ? `<button class="member-menu__trigger" data-member-menu-trigger aria-expanded="false" aria-controls="${menuId}" aria-label="Player actions">${systemIcon('more')}</button><div class="member-menu-popover" id="${menuId}" data-member-menu hidden><button data-transfer-host="${member.user_id}">Make host</button><button class="danger-text" data-remove-member="${member.user_id}">Remove</button></div>` : ''}</article>`;
   }).join('')}</div>`;
 }
 
@@ -448,7 +474,7 @@ export function leaderboardView({ leaderboard = [], profileId, closedTableCount 
 
 function performanceChart(points = [], baselineNet = 0) {
   if (!points.length) {
-    return '<div class="performance-chart-empty"><span>⌁</span><strong>No performance data yet</strong><p>Closed tables will build this player’s trend.</p></div>';
+    return `<div class="performance-chart-empty"><span>${systemIcon('lightning')}</span><strong>No performance data yet</strong><p>Closed tables will build this player’s trend.</p></div>`;
   }
 
   const width = 760;
@@ -493,6 +519,10 @@ function performanceRangeButtons(activeRange, total) {
 
 export function playerProfileView({ player, performance, isCurrentUser = false, graphRange = 'all', backRoute = 'leaderboard', backLabel = 'Back to leaderboard' }) {
   const netClass = performance.net > 0 ? 'positive' : performance.net < 0 ? 'negative' : '';
+  const bestResult = Number(performance.bestResult) || 0;
+  const biggestLoss = Number(performance.biggestLoss) || 0;
+  const currentStreak = performance.currentStreak || { outcome: '', count: 0 };
+  const longestWinStreak = Number(performance.longestWinStreak) || 0;
   const recent = [...performance.points].reverse().slice(0, 8);
   const rangeCount = graphRange === 'all' ? performance.points.length : Math.min(Number(graphRange) || performance.points.length, performance.points.length);
   const startIndex = Math.max(0, performance.points.length - rangeCount);
@@ -510,6 +540,12 @@ export function playerProfileView({ player, performance, isCurrentUser = false, 
       <article><span>Tables</span><strong>${performance.tableCount}</strong><small>Closed results</small></article>
       <article><span>Total net</span><strong class="${netClass}">${formatCurrency(performance.net, { signed: true })}</strong><small>Cash out − cash in</small></article>
       <article><span>Total cash out</span><strong>${formatCurrency(performance.cashOut)}</strong><small>Across all results</small></article>
+    </section>
+    <section class="performance-highlights" aria-label="Performance highlights">
+      <article><span>${systemIcon('trophy')}</span><div><small>Best result</small><strong class="${bestResult > 0 ? 'positive' : ''}">${formatCurrency(bestResult, { signed: true })}</strong></div></article>
+      <article><span>${systemIcon('cashout')}</span><div><small>Biggest loss</small><strong class="${biggestLoss < 0 ? 'negative' : ''}">${formatCurrency(biggestLoss, { signed: true })}</strong></div></article>
+      <article><span>${systemIcon('lightning')}</span><div><small>Current streak</small><strong>${currentStreak.count ? `${currentStreak.count} ${currentStreak.outcome}${currentStreak.count === 1 ? '' : 's'}` : 'None'}</strong></div></article>
+      <article><span>${systemIcon('trophy')}</span><div><small>Longest win streak</small><strong>${longestWinStreak} win${longestWinStreak === 1 ? '' : 's'}</strong></div></article>
     </section>
     <section class="performance-panel system-window" data-performance-panel>
       <div class="leaderboard-heading performance-heading"><div><h2>Performance trend</h2><p>Running net after every closed table. Select a point for details.</p></div><span>${performance.tableCount} result${performance.tableCount === 1 ? '' : 's'}</span></div>
@@ -548,7 +584,7 @@ function historyCard(session, profileId, result = null, isAdmin = false) {
       <div class="history-card__summary-top"><span class="status status--${session.status}">${statusLabel(session.status)}</span><span class="code">${escapeHtml(session.session_code)}</span></div>
       <div class="history-card__summary-copy"><h3>${escapeHtml(session.name)}</h3><p>${own ? 'Created by you' : `Created by ${escapeHtml(session.host?.display_name || 'User')}`}</p></div>
       ${compactResult}
-      <span class="history-card__chevron" aria-hidden="true">⌄</span>
+      <span class="history-card__chevron" aria-hidden="true">${systemIcon('chevron')}</span>
     </summary>
     <div class="history-card__body">
       <div class="history-card__details-grid">${sessionTimerMarkup(session, true)}${resultPreview}</div>
@@ -598,43 +634,21 @@ export function profileView(profile) {
   return `${pageHeader('Profile')}<section class="profile-grid"><article class="simple-panel profile-summary"><span class="avatar avatar--large">${initials(profile.display_name)}</span><h2>${escapeHtml(profile.display_name)}</h2><p>${profile.is_admin ? 'Admin' : 'User'}</p><small>@${escapeHtml(profile.login_name || '')}</small><a class="button button--ghost button--small" href="#/player/${profile.id}" data-player-origin="profile">View performance</a></article><article class="simple-panel profile-settings"><div class="stack">${nameControl}<div class="profile-account-info"><span>Email</span><strong>${escapeHtml(profile.email || 'No email')}</strong><small>Email is used for login and cannot be changed here.</small></div><button class="button button--secondary" type="button" data-open="change-password">Change password</button></div></article></section>`;
 }
 
-function auditDetailText(log) {
-  const details = log.details || {};
-  const parts = [];
-  if (details.amount !== undefined) parts.push(formatCurrency(details.amount));
-  if (details.approved_amount !== undefined) parts.push(`Approved ${formatCurrency(details.approved_amount)}`);
-  if (details.reason) parts.push(details.reason);
-  if (details.new_status) parts.push(statusLabel(details.new_status));
-  return parts.join(' · ');
-}
-
-function adminUserActions(user, activeAdminId) {
-  if (user.id === activeAdminId) return '<span class="admin-you">You</span><button class="button button--ghost button--small" data-admin-reset-password="' + user.id + '">Reset password</button>';
-  const statusButton = user.account_status === 'suspended'
-    ? `<button class="button button--secondary button--small" data-admin-status="active" data-user-id="${user.id}">Restore</button>`
+function adminUserMenu(user, activeAdminId) {
+  const menuId = `admin-user-menu-${user.id}`;
+  const self = user.id === activeAdminId;
+  const statusAction = self ? '' : user.account_status === 'suspended'
+    ? `<button type="button" data-admin-status="active" data-user-id="${user.id}">Restore account</button>`
     : user.account_status === 'active'
-      ? `<button class="button button--danger button--small" data-admin-status="suspended" data-user-id="${user.id}">Suspend</button>`
+      ? `<button type="button" data-admin-status="suspended" data-user-id="${user.id}" class="is-danger">Suspend account</button>`
       : user.account_status === 'rejected'
-        ? `<button class="button button--secondary button--small" data-admin-registration-approve="${user.id}">Approve</button>`
+        ? `<button type="button" data-admin-registration-approve="${user.id}">Approve account</button>`
         : '';
-  return `${statusButton}<button class="button button--ghost button--small" data-admin-reset-password="${user.id}">Reset password</button><button class="button button--danger button--small" data-admin-delete-user="${user.id}">Delete</button>`;
+  const deleteAction = self ? '' : `<button type="button" data-admin-delete-user="${user.id}" class="is-danger">Delete account</button>`;
+  return `<div class="admin-user-menu-wrap"><button class="admin-user-menu__trigger" type="button" data-admin-user-menu-trigger aria-expanded="false" aria-controls="${menuId}" aria-label="Manage ${escapeHtml(user.display_name)}">${systemIcon('more')}</button><div class="admin-user-menu-popover" id="${menuId}" hidden><a href="#/player/${user.id}" data-player-origin="admin">View performance</a><button type="button" data-admin-reset-password="${user.id}">Reset password</button>${statusAction}${deleteAction}</div></div>`;
 }
 
-function adminReportCard(report) {
-  return `<article class="request-card"><div class="request-card__header"><div><h3>${escapeHtml(report.session_name)}</h3><p>${escapeHtml(report.reporter_name)} · ${formatRelative(report.created_at)}</p></div><span class="status status--${report.status}">${statusLabel(report.status)}</span></div><p>${escapeHtml(report.details)}</p>${['open', 'reviewing'].includes(report.status) ? `<div class="request-actions"><button class="button button--ghost" data-review-report="${report.id}" data-report-status="dismissed">Dismiss</button><button class="button button--secondary" data-review-report="${report.id}" data-report-status="reviewing">Reviewing</button><button class="button button--primary" data-review-report="${report.id}" data-report-status="resolved">Resolve</button></div>` : report.resolution_note ? `<p class="request-note">${escapeHtml(report.resolution_note)}</p>` : ''}</article>`;
-}
-
-function auditEntry(log) {
-  const detail = auditDetailText(log);
-  const tableLabel = log.session?.name || log.details?.table_name || '';
-  const tableCode = log.session?.session_code || log.details?.table_code || '';
-  const context = [tableLabel, tableCode].filter(Boolean).join(' · ');
-  return `<article class="activity-item audit-entry"><span class="activity-icon">↺</span><div class="activity-copy"><strong>${escapeHtml(log.action.replaceAll('_', ' '))}</strong><small>${escapeHtml(log.actor?.display_name || 'System')} · ${formatDateTime(log.created_at)}</small>${context ? `<em>${escapeHtml(context)}</em>` : ''}${detail ? `<em>${escapeHtml(detail)}</em>` : ''}</div></article>`;
-}
-
-export function adminView(users = [], logs = [], reports = [], activeAdminId = '', userControls = {}) {
-  const openReports = reports.filter(report => ['open', 'reviewing'].includes(report.status));
-  const pastReports = reports.filter(report => ['resolved', 'dismissed'].includes(report.status));
+export function adminView(users = [], activeAdminId = '', userControls = {}) {
   const pendingUsers = users.filter(user => user.account_status === 'pending' && !user.is_admin).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   const registeredUsers = users.filter(user => user.account_status !== 'pending');
   const activeFilter = userControls.filter || 'all';
@@ -645,55 +659,29 @@ export function adminView(users = [], logs = [], reports = [], activeAdminId = '
     return filterMatch && (!search || searchText.includes(search));
   };
   const visibleCount = registeredUsers.filter(matchesUser).length;
+  const counts = {
+    active: registeredUsers.filter(user => user.account_status === 'active').length,
+    suspended: registeredUsers.filter(user => user.account_status === 'suspended').length,
+    rejected: registeredUsers.filter(user => user.account_status === 'rejected').length
+  };
   const userFilters = [['all', 'All'], ['active', 'Active'], ['suspended', 'Suspended'], ['rejected', 'Rejected'], ['admins', 'Admins']];
-  const latestLogs = logs.slice(0, 10);
   return `
-    ${pageHeader('Admin', 'Approve accounts, review reports and manage app data.')}
+    ${pageHeader('Admin', 'Approve accounts and manage registered users.')}
+    <section class="admin-summary-grid" aria-label="Account summary"><article><span>Registered</span><strong>${registeredUsers.length}</strong></article><article><span>Active</span><strong>${counts.active}</strong></article><article><span>Suspended</span><strong>${counts.suspended}</strong></article><article><span>Waiting</span><strong>${pendingUsers.length}</strong></article></section>
     <section class="section-block" id="account-requests">
       <div class="section-heading"><h2>Account requests</h2><span>${pendingUsers.length}</span></div>
       <div class="request-list">${pendingUsers.length ? pendingUsers.map(user => `<article class="request-card system-window"><div class="request-card__header"><div><h3>${escapeHtml(user.display_name)}</h3><p>@${escapeHtml(user.login_name)} · ${escapeHtml(user.email || 'No email')} · ${formatRelative(user.created_at)}</p></div><span class="status status--pending">Waiting</span></div><div class="request-actions"><button class="button button--danger" data-admin-registration-reject="${user.id}">Reject</button><button class="button button--primary" data-admin-registration-approve="${user.id}">Approve</button></div></article>`).join('') : '<p class="empty-copy">No accounts waiting.</p>'}</div>
     </section>
-    <section class="section-block">
-      <div class="section-heading"><h2>Open reports</h2><span>${openReports.length}</span></div>
-      <div class="request-list">${openReports.length ? openReports.map(adminReportCard).join('') : '<p class="empty-copy">No open reports.</p>'}</div>
-      ${pastReports.length ? `<details class="simple-details admin-past-reports"><summary>Past reports <span>${pastReports.length}</span></summary><div class="details-body request-list">${pastReports.map(adminReportCard).join('')}</div></details>` : ''}
-    </section>
-    <section class="section-block">
+    <section class="section-block admin-users-section">
       <div class="section-heading"><h2>Registered users</h2><span data-admin-user-count>${visibleCount} of ${registeredUsers.length}</span></div>
       <div class="admin-user-tools"><label class="admin-user-search"><span class="sr-only">Search registered users</span><input type="search" data-admin-user-search value="${escapeHtml(userControls.search || '')}" placeholder="Search name, username or email"></label><div class="admin-user-filters" role="group" aria-label="Filter registered users">${userFilters.map(([value, label]) => `<button type="button" data-admin-user-filter="${value}" class="${activeFilter === value ? 'is-active' : ''}" aria-pressed="${activeFilter === value}">${label}</button>`).join('')}</div></div>
-      <div class="user-list" data-admin-user-list>${registeredUsers.map(user => { const visible = matchesUser(user); const searchText = `${user.display_name || ''} ${user.login_name || ''} ${user.email || ''}`.toLowerCase(); return `<article class="user-row" data-admin-user-row data-search="${escapeHtml(searchText)}" data-status="${escapeHtml(user.account_status)}" data-is-admin="${user.is_admin ? 'true' : 'false'}" ${visible ? '' : 'hidden'}><a class="player-mini-profile" href="#/player/${user.id}" data-player-origin="admin"><span class="avatar">${initials(user.display_name)}</span><span><strong>${escapeHtml(user.display_name)}</strong><small>@${escapeHtml(user.login_name || '')} · ${escapeHtml(user.email || 'No email')} · ${accountStatusLabel(user.account_status)}${user.must_change_password ? ' · Temporary password' : ''}</small></span></a><div class="user-row__actions">${adminUserActions(user, activeAdminId)}</div></article>`; }).join('')}<p class="empty-copy admin-user-empty" data-admin-user-empty ${visibleCount ? 'hidden' : ''}>No users match this search and filter.</p></div>
+      <div class="user-list" data-admin-user-list>${registeredUsers.map(user => { const visible = matchesUser(user); const searchText = `${user.display_name || ''} ${user.login_name || ''} ${user.email || ''}`.toLowerCase(); return `<article class="user-row admin-user-row" data-admin-user-row data-search="${escapeHtml(searchText)}" data-status="${escapeHtml(user.account_status)}" data-is-admin="${user.is_admin ? 'true' : 'false'}" ${visible ? '' : 'hidden'}><a class="player-mini-profile" href="#/player/${user.id}" data-player-origin="admin"><span class="avatar">${initials(user.display_name)}</span><span><strong>${escapeHtml(user.display_name)}${user.id === activeAdminId ? ' <em>You</em>' : ''}</strong><small>@${escapeHtml(user.login_name || '')}</small><small>${escapeHtml(user.email || 'No email')}</small></span></a><div class="admin-user-row__status"><span class="status status--${user.account_status}">${accountStatusLabel(user.account_status)}</span>${user.is_admin ? '<span class="admin-role-chip">Admin</span>' : ''}${user.must_change_password ? '<span class="temporary-chip">Temporary password</span>' : ''}</div>${adminUserMenu(user, activeAdminId)}</article>`; }).join('')}<p class="empty-copy admin-user-empty" data-admin-user-empty ${visibleCount ? 'hidden' : ''}>No users match this search and filter.</p></div>
     </section>
     <section class="section-block">
       <div class="section-heading"><h2>Data</h2><span class="section-heading__badge section-heading__badge--text">Admin only</span></div>
-      <div class="card-grid admin-data-grid">
-        <article class="simple-panel admin-data-card"><div><h3>Clear activity</h3><p>Delete tables, money records, requests, notifications, reports and audit logs. Registered users stay.</p></div><button class="button button--danger" data-admin-clear-activity>Clear activity</button></article>
-      </div>
-    </section>
-    <section class="section-block audit-preview">
-      <div class="section-heading"><div><h2>Recent audit activity</h2><p>Latest ${Math.min(logs.length, 10)} of ${logs.length} records.</p></div><a class="button button--secondary button--small" href="#/audit">View full audit log</a></div>
-      <div class="activity-list">${latestLogs.length ? latestLogs.map(auditEntry).join('') : '<p class="empty-copy">No audit records.</p>'}</div>
+      <div class="card-grid admin-data-grid"><article class="simple-panel admin-data-card"><div><h3>Clear activity</h3><p>Delete all tables, money records, requests and notifications. Registered users stay.</p></div><button class="button button--danger" data-admin-clear-activity>Clear activity</button></article></div>
     </section>
     <details class="danger-zone"><summary>Danger zone</summary><div class="danger-zone__body"><div><h3>Hard reset Pokerat</h3><p>Delete every registered user and all activity. The app returns to first-time administrator setup.</p></div><button class="button button--danger" data-open="hard-reset">Hard reset everything</button></div></details>`;
-}
-
-export function auditLogView({ logs = [], controls = {}, totalCount = 0 }) {
-  const categories = [['all', 'All'], ['accounts', 'Accounts'], ['tables', 'Tables'], ['money', 'Money'], ['reports', 'Reports'], ['administration', 'Administration']];
-  const ranges = [['all', 'All time'], ['today', 'Today'], ['7', '7 days'], ['30', '30 days'], ['custom', 'Custom']];
-  const visibleCount = Number(controls.visibleCount) || 25;
-  const visibleLogs = logs.slice(0, visibleCount);
-  return `
-    ${pageHeader('Audit log', `${totalCount} record${totalCount === 1 ? '' : 's'} match the current filters.`, '<a class="button button--ghost button--small" href="#/admin">← Back to Admin</a><button class="button button--secondary button--small" type="button" data-export-audit>Export CSV</button>')}
-    <section class="simple-panel audit-tools">
-      <label class="audit-search"><span>Search records</span><input type="search" data-audit-search value="${escapeHtml(controls.search || '')}" placeholder="Player, admin, table or action"></label>
-      <div><span class="audit-tool-label">Category</span><div class="audit-filter-row" role="group" aria-label="Filter audit category">${categories.map(([value, label]) => `<button type="button" data-audit-category="${value}" class="${controls.category === value ? 'is-active' : ''}" aria-pressed="${controls.category === value}">${label}</button>`).join('')}</div></div>
-      <div><span class="audit-tool-label">Date</span><div class="audit-filter-row" role="group" aria-label="Filter audit date">${ranges.map(([value, label]) => `<button type="button" data-audit-range="${value}" class="${controls.range === value ? 'is-active' : ''}" aria-pressed="${controls.range === value}">${label}</button>`).join('')}</div></div>
-      ${controls.range === 'custom' ? `<div class="audit-custom-dates"><label>From<input type="date" data-audit-from value="${escapeHtml(controls.from || '')}"></label><label>To<input type="date" data-audit-to value="${escapeHtml(controls.to || '')}"></label></div>` : ''}
-    </section>
-    <section class="section-block">
-      <div class="section-heading"><h2>Records</h2><span>${visibleLogs.length} of ${totalCount}</span></div>
-      <div class="activity-list audit-full-list">${visibleLogs.length ? visibleLogs.map(auditEntry).join('') : '<p class="empty-copy">No audit records match these filters.</p>'}</div>
-      ${totalCount > visibleLogs.length ? '<button class="button button--secondary audit-load-more" type="button" data-audit-load-more>Load 25 more</button>' : ''}
-    </section>`;
 }
 
 export function modalTemplate(type, context = {}) {
@@ -720,10 +708,6 @@ export function modalTemplate(type, context = {}) {
       title: `Reset ${escapeHtml(context.userName || 'player')} password`,
       body: `<form id="admin-reset-password-form" class="stack"><input type="hidden" name="userId" value="${escapeHtml(context.userId || '')}"><p class="muted">Set a temporary password and tell it to the player. They must replace it after logging in.</p><label>Temporary password<input name="password" type="password" minlength="8" maxlength="64" required autocomplete="new-password" placeholder="At least 8 characters"></label><label>Confirm password<input name="confirmPassword" type="password" minlength="8" maxlength="64" required autocomplete="new-password" placeholder="Repeat password"></label>${formError()}<button class="button button--primary" type="submit">Reset password</button></form>`
     },
-    'report-session': {
-      title: 'Report table',
-      body: `<form id="report-session-form" class="stack"><label>Problem<select name="reason" required><option value="incorrect_record">Wrong money record</option><option value="host_conduct">Problem with host</option><option value="access_issue">Cannot access something</option><option value="other">Other</option></select></label><label>What happened?<textarea name="details" minlength="10" maxlength="1000" required></textarea></label>${formError()}<button class="button button--danger" type="submit">Send report</button></form>`
-    },
     'pending-close': {
       title: 'Requests still waiting',
       body: `<div class="stack"><div class="simple-notice warning"><strong>${pendingCount} request${pendingCount === 1 ? '' : 's'} still need${pendingCount === 1 ? 's' : ''} a decision.</strong><span>Approve or reject every request before ending the table.</span></div><button class="button button--primary" type="button" data-review-pending-close>Review requests</button></div>`
@@ -736,10 +720,6 @@ export function modalTemplate(type, context = {}) {
       title: 'Fix money record',
       body: `<form id="correct-transaction-form" class="stack"><input type="hidden" name="transactionId" value="${escapeHtml(context.transactionId || '')}"><label>Correct amount <span class="optional">leave blank to remove</span><input name="correctedAmount" type="number" min="0.01" step="0.01" value="${escapeHtml(context.amount || '')}"></label><label>Why?<textarea name="reason" required maxlength="240"></textarea></label>${formError()}<button class="button button--danger" type="submit">Save fix</button></form>`
     },
-    'review-report': {
-      title: context.status === 'reviewing' ? 'Mark report as reviewing' : context.status === 'dismissed' ? 'Dismiss report' : 'Resolve report',
-      body: `<form id="review-report-form" class="stack"><input type="hidden" name="reportId" value="${escapeHtml(context.reportId || '')}"><input type="hidden" name="status" value="${escapeHtml(context.status || '')}"><div class="simple-notice"><strong>${escapeHtml(context.sessionName || 'Reported table')}</strong><span>Reported by ${escapeHtml(context.reporterName || 'Player')}</span></div><label>${context.status === 'reviewing' ? 'Review note <span class="optional">optional</span>' : 'Resolution note'}<textarea name="note" maxlength="500" ${context.status === 'reviewing' ? '' : 'required'} placeholder="Explain the action taken"></textarea></label>${formError()}<button class="button ${context.status === 'dismissed' ? 'button--danger' : 'button--primary'}" type="submit">Save report status</button></form>`
-    },
     'admin-account-status': {
       title: context.status === 'suspended' ? `Suspend ${escapeHtml(context.userName || 'account')}` : `Restore ${escapeHtml(context.userName || 'account')}`,
       body: `<form id="admin-account-status-form" class="stack"><input type="hidden" name="userId" value="${escapeHtml(context.userId || '')}"><input type="hidden" name="status" value="${escapeHtml(context.status || '')}">${context.status === 'suspended' ? '<p class="muted">This player will be unable to log in until restored.</p><label>Reason<textarea name="reason" maxlength="300" required placeholder="Explain why the account is being suspended"></textarea></label>' : '<div class="simple-notice success"><strong>Restore account access?</strong><span>The player will be able to log in again.</span></div>'}${formError()}<button class="button ${context.status === 'suspended' ? 'button--danger' : 'button--primary'}" type="submit">${context.status === 'suspended' ? 'Suspend account' : 'Restore account'}</button></form>`
@@ -750,14 +730,14 @@ export function modalTemplate(type, context = {}) {
     },
     'delete-history-table': {
       title: 'Delete table permanently',
-      body: `<form id="delete-history-table-form" class="stack"><input type="hidden" name="tableId" value="${escapeHtml(context.tableId || '')}"><div class="simple-notice warning"><strong>${escapeHtml(context.tableName || 'Finished table')}</strong><span>This removes the table, members, money records, results, reports and related notifications. Leaderboard and performance totals will change.</span></div><label>Type DELETE ${escapeHtml(context.tableCode || '')}<input name="confirmation" autocomplete="off" required placeholder="DELETE ${escapeHtml(context.tableCode || '')}"></label>${formError()}<div class="modal__actions"><button class="button button--ghost" type="button" data-close-modal>Cancel</button><button class="button button--danger" type="submit">Delete table</button></div></form>`
+      body: `<form id="delete-history-table-form" class="stack"><input type="hidden" name="tableId" value="${escapeHtml(context.tableId || '')}"><div class="simple-notice warning"><strong>${escapeHtml(context.tableName || 'Finished table')}</strong><span>This removes the table, members, money records, results and related notifications. Leaderboard and performance totals will change.</span></div><label>Type DELETE ${escapeHtml(context.tableCode || '')}<input name="confirmation" autocomplete="off" required placeholder="DELETE ${escapeHtml(context.tableCode || '')}"></label>${formError()}<div class="modal__actions"><button class="button button--ghost" type="button" data-close-modal>Cancel</button><button class="button button--danger" type="submit">Delete table</button></div></form>`
     },
     notifications: { title: 'Notifications', body: `<div data-notification-panel>${notificationList(context.notifications || [])}</div>` }
   };
 
   const form = forms[type];
   if (!form) return '';
-  return `<dialog class="modal modal--${type}" id="active-modal"><div class="modal__card system-window${type === 'notifications' ? ' modal__card--notifications' : ''}"><div class="modal__header"><h2>${form.title}</h2><button class="icon-button" data-close-modal aria-label="Close">×</button></div>${form.body}</div></dialog>`;
+  return `<dialog class="modal modal--${type}" id="active-modal"><div class="modal__card system-window${type === 'notifications' ? ' modal__card--notifications' : ''}"><div class="modal__header"><h2>${form.title}</h2><button class="icon-button" data-close-modal aria-label="Close">${systemIcon('close')}</button></div>${form.body}</div></dialog>`;
 }
 
 function moneyForm(id, label, button, confirmation = '') {
@@ -783,7 +763,7 @@ function notificationItem(item) {
   const action = !actionLabel ? '' : unread && !item.action_hash && item.delivery !== 'final_result'
     ? `<button class="button button--ghost button--small" type="button" data-mark-notification-read="${item.id}">Mark read</button>`
     : `<button class="button button--ghost button--small" type="button" data-open-notification="${item.id}">${actionLabel}</button>`;
-  return `<article class="activity-item notification-list-item ${unread ? 'is-unread' : 'is-read'}" data-notification-item="${item.id}"><span class="activity-icon">${unread ? '!' : '✓'}</span><div class="activity-copy"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.message)} · ${formatRelative(item.created_at)}</small></div>${action}</article>`;
+  return `<article class="activity-item notification-list-item ${unread ? 'is-unread' : 'is-read'}" data-notification-item="${item.id}"><span class="activity-icon">${unread ? systemIcon('alert') : systemIcon('check')}</span><div class="activity-copy"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.message)} · ${formatRelative(item.created_at)}</small></div>${action}</article>`;
 }
 
 export function notificationList(notifications) {
@@ -794,7 +774,7 @@ export function notificationList(notifications) {
 }
 
 export function suspendedView(profile) {
-  return `<main class="access-screen"><section class="access-card auth-card system-window auth-status-card">${brandMark()}<span class="auth-status-icon">!</span><h1>Account suspended</h1><p>${profile?.status_note ? escapeHtml(profile.status_note) : `${escapeHtml(profile?.display_name || 'Player')}, ask an admin to restore your account.`}</p><button data-logout class="button button--primary">Log out</button></section></main>`;
+  return `<main class="access-screen"><section class="access-card auth-card system-window auth-status-card">${brandMark()}<span class="auth-status-icon">${systemIcon('alert')}</span><h1>Account suspended</h1><p>${profile?.status_note ? escapeHtml(profile.status_note) : `${escapeHtml(profile?.display_name || 'Player')}, ask an admin to restore your account.`}</p><button data-logout class="button button--primary">Log out</button></section></main>`;
 }
 
 export function emptyState(title, description, buttonLabel = '', openType = '') {

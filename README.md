@@ -15,7 +15,7 @@ Pokerat is a private poker-table companion for games with friends. It now uses S
 - Finished-table History
 - Global Leaderboard calculated only from closed tables
 - Realtime final-result pop-ups
-- Remote reports and audit records
+- Simplified administrator account management
 - Admin Clear Activity and Hard Reset
 
 ## Setup

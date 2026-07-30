@@ -9,8 +9,6 @@ const state = {
   transactions: [],
   requests: { join: [], buyin: [], cashout: [] },
   notifications: [],
-  reports: [],
-  auditLogs: [],
   sessionResults: [],
   route: typeof location !== 'undefined' ? (location.hash || '#/home') : '#/home',
   loading: true,
