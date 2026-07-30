@@ -403,7 +403,6 @@ export function showNotificationPopup({ title, message, type = 'info', actionLab
 
   popup.append(icon, copy, controls);
   region.appendChild(popup);
-  triggerHapticFeedback(type);
   requestAnimationFrame(() => popup.classList.add('is-visible'));
   timer = window.setTimeout(remove, duration);
 }
@@ -490,7 +489,6 @@ export function showAdminRegistrationApprovalDialog({
   dialog.addEventListener('close', () => dialog.remove(), { once: true });
 
   dialog.showModal();
-  triggerHapticFeedback('request', { force: true });
   approveButton.focus();
   return dialog;
 }

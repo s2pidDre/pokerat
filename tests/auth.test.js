@@ -30,7 +30,7 @@ test('password rules match the Supabase form', () => {
 });
 
 test('account screens and administrator controls render', async () => {
-  const { accountAccessView, adminView, forcePasswordChangeView, initialAdminSetupView } = await import('../src/components/templates.js');
+  const { accountAccessView, adminView, forcePasswordChangeView, initialAdminSetupView, profileView } = await import('../src/components/templates.js');
   assert.match(initialAdminSetupView(), /name="email"/);
   assert.match(accountAccessView({ mode: 'login' }), /Username or email/);
   assert.match(accountAccessView({ mode: 'login' }), /Remember me/);
@@ -40,4 +40,60 @@ test('account screens and administrator controls render', async () => {
   const pending = { id: 'u-new', display_name: 'Mark', login_name: 'mark', email: 'mark@example.com', account_status: 'pending', is_admin: false, created_at: new Date().toISOString() };
   assert.match(adminView([pending], [], [], 'u-admin'), /mark@example.com/);
   assert.match(adminView([pending], [], [], 'u-admin'), /data-admin-registration-approve="u-new"/);
+  const profile = { ...pending, account_status: 'active', display_name_changed_at: null };
+  const profileHtml = profileView(profile);
+  assert.doesNotMatch(profileHtml, /name="email"/);
+  assert.match(profileHtml, /cannot be changed here/);
+  assert.match(profileHtml, /90 days/);
+});
+
+test('small UI cleanup and player performance views render', async () => {
+  const { appShell, modalTemplate, playerProfileView, profileView } = await import('../src/components/templates.js');
+  const player = {
+    id: 'player-one',
+    display_name: 'Ferry Player',
+    login_name: 'ferry',
+    email: 'ferry@example.com',
+    is_admin: false,
+    display_name_changed_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  };
+  const shell = appShell({ profile: player, isAdmin: false, route: '#/home', content: '', notificationCount: 120 });
+  assert.doesNotMatch(shell, />Tables</);
+  assert.match(shell, />99\+</);
+
+  const lockedProfile = profileView(player);
+  assert.match(lockedProfile, /profile-name-locked/);
+  assert.doesNotMatch(lockedProfile, /name="displayName"/);
+  assert.match(lockedProfile, /View performance/);
+
+  const performance = {
+    tableCount: 2,
+    wins: 1,
+    losses: 1,
+    even: 0,
+    winRate: 50,
+    cashIn: 1000,
+    cashOut: 1100,
+    net: 100,
+    points: [
+      { sessionId: 'one', sessionName: 'First table', sessionCode: 'PKR-ONE', playedAt: '2026-07-01T10:00:00Z', net: 300, cumulativeNet: 300, outcome: 'win' },
+      { sessionId: 'two', sessionName: 'Second table', sessionCode: 'PKR-TWO', playedAt: '2026-07-02T10:00:00Z', net: -200, cumulativeNet: 100, outcome: 'loss' }
+    ]
+  };
+  const playerHtml = playerProfileView({ player, performance, isCurrentUser: true });
+  assert.match(playerHtml, /Performance trend/);
+  assert.match(playerHtml, /performance-point--win/);
+  assert.match(playerHtml, /performance-point--loss/);
+
+  assert.match(modalTemplate('hard-reset'), /RESET POKERAT/);
+  assert.match(modalTemplate('admin-account-status', { status: 'suspended', userId: 'x', userName: 'X' }), /admin-account-status-form/);
+  assert.match(modalTemplate('review-report', { status: 'resolved', reportId: 'r' }), /review-report-form/);
+});
+
+test('admin actions no longer use browser prompts', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const main = await readFile(new URL('../src/main.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(main, /\bprompt\s*\(/);
+  assert.match(main, /review-report-form/);
+  assert.match(main, /admin-account-status-form/);
 });

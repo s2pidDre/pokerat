@@ -1,6 +1,6 @@
 import { getState, setState, subscribe } from './lib/store.js';
 import { initRouter, navigate, parseRoute } from './lib/router.js';
-import { closeAdminRegistrationApprovalDialog, closeHostMoneyApprovalDialog, confirmDialog, setButtonBusy, showAdminRegistrationApprovalDialog, showFinalResultDialog, showHostMoneyApprovalDialog, showNotificationPopup, showToast, triggerHapticFeedback } from './lib/ui.js';
+import { closeHostMoneyApprovalDialog, confirmDialog, setButtonBusy, showFinalResultDialog, showHostMoneyApprovalDialog, showNotificationPopup, showToast, triggerHapticFeedback } from './lib/ui.js';
 import { loadAppData, resetAppData, saveAppData } from './lib/app-data.js';
 import {
   adminView,
@@ -12,17 +12,17 @@ import {
   homeView,
   modalTemplate,
   profileView,
+  playerProfileView,
   accountAccessView,
   requestsView,
   sessionView,
-  sessionsView,
   suspendedView
 } from './components/templates.js';
 import { availableTableFunds, playerSummary, toCents } from './utils/accounting.js';
 import { escapeHtml, formatCurrency, formatDuration, formatDurationSeconds } from './utils/format.js';
-import { buildClosedTableLeaderboard } from './utils/leaderboard.js';
+import { buildClosedTableLeaderboard, buildPlayerPerformance } from './utils/leaderboard.js';
 import { validAmount } from './utils/validation.js';
-import { clearLoginAttempts, getLoginLock, normalizeLoginIdentifier, recordFailedLogin, validateDisplayName, validateEmail, validatePassword } from './utils/auth.js';
+import { clearLoginAttempts, getLoginLock, normalizeLoginIdentifier, recordFailedLogin, validateDisplayName, validatePassword } from './utils/auth.js';
 import { changeOwnPassword, completeForcedPasswordChange, createFirstAdministrator, getCurrentProfile, getSession, getVisibleProfiles, hasActiveAdministrator, loginAccount, logoutAccount, onAuthStateChange, registerAccount, runAdminAccountAction, subscribeToProfiles, unsubscribeFromProfiles, updateOwnProfile } from './lib/account-service.js';
 import { cancelMoneyRequest, cancelPokerTable, clearRemoteActivity, closePokerTable, correctPokerTransaction, createPokerTable, joinPokerTable, loadPokeratActivity, markAllNotificationsRead, markNotificationRead, recordHostMoney, removeTableMember, reviewMoneyRequest, reviewSessionReport, startPokerTable, submitMoneyRequest, submitSessionReport, subscribeToPokeratActivity, transferTableHost, unsubscribeFromPokeratActivity } from './lib/table-service.js';
 
@@ -32,6 +32,23 @@ let sessionTimerInterval = null;
 const surfacedNotificationIds = new Set();
 let activityRefreshTimer = null;
 let activityRefreshPromise = null;
+let notificationBaselineReady = false;
+const pendingNotificationPopups = new Map();
+let notificationPopupTimer = null;
+
+function resetNotificationBaseline() {
+  surfacedNotificationIds.clear();
+  pendingNotificationPopups.clear();
+  if (notificationPopupTimer) window.clearTimeout(notificationPopupTimer);
+  notificationPopupTimer = null;
+  notificationBaselineReady = false;
+}
+
+function seedNotificationBaseline(notifications = []) {
+  surfacedNotificationIds.clear();
+  notifications.forEach(notification => surfacedNotificationIds.add(notification.id));
+  notificationBaselineReady = true;
+}
 
 function queueRender() {
   if (renderQueued) return;
@@ -196,10 +213,16 @@ function requestsForUser(userId) {
   };
 }
 
-function unreadNotifications(userId) {
+function notificationsForUser(userId, limit = 20) {
   return getState().notifications
-    .filter(notification => notification.user_id === userId && !notification.read_at)
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    .filter(notification => notification.user_id === userId)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .slice(0, limit);
+}
+
+function unreadNotifications(userId) {
+  return notificationsForUser(userId, Number.MAX_SAFE_INTEGER)
+    .filter(notification => !notification.read_at);
 }
 
 function adminLogs() {
@@ -214,19 +237,31 @@ function adminLogs() {
 }
 
 function surfaceNewNotifications(userId, notifications) {
-  if (document.getElementById('admin-registration-queue-modal')?.open || document.getElementById('host-money-queue-modal')?.open || document.getElementById('final-result-modal')?.open) return;
-  const unseen = notifications
-    .filter(notification =>
-      notification.user_id === userId &&
-      !['host_buyin_queue', 'host_money_queue', 'final_result', 'admin_registration_queue'].includes(notification.delivery) &&
-      !surfacedNotificationIds.has(notification.id)
-    )
-    .slice(0, 3)
-    .reverse();
+  if (!notificationBaselineReady) return;
+  if (document.getElementById('host-money-queue-modal')?.open || document.getElementById('final-result-modal')?.open) return;
 
-  unseen.forEach((notification, index) => {
+  const unseen = notifications.filter(notification =>
+    notification.user_id === userId &&
+    !['host_buyin_queue', 'host_money_queue', 'final_result', 'admin_registration_queue'].includes(notification.delivery) &&
+    !surfacedNotificationIds.has(notification.id)
+  );
+  if (!unseen.length) return;
+
+  unseen.forEach(notification => {
     surfacedNotificationIds.add(notification.id);
-    window.setTimeout(() => {
+    pendingNotificationPopups.set(notification.id, notification);
+  });
+
+  if (notificationPopupTimer) window.clearTimeout(notificationPopupTimer);
+  notificationPopupTimer = window.setTimeout(() => {
+    notificationPopupTimer = null;
+    const queued = [...pendingNotificationPopups.values()]
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    pendingNotificationPopups.clear();
+    if (!queued.length) return;
+
+    if (queued.length === 1) {
+      const notification = queued[0];
       showNotificationPopup({
         title: notification.title,
         message: notification.message,
@@ -234,8 +269,16 @@ function surfaceNewNotifications(userId, notifications) {
         actionHash: notification.action_hash || '',
         actionLabel: notification.action_hash ? 'Open table' : ''
       });
-    }, index * 180);
-  });
+      return;
+    }
+
+    const newest = queued[0];
+    showNotificationPopup({
+      title: `${queued.length} new notifications`,
+      message: `${newest.title}${queued.length > 1 ? ` and ${queued.length - 1} more update${queued.length - 1 === 1 ? '' : 's'}` : ''}.`,
+      type: 'info'
+    });
+  }, 350);
 }
 
 function inferNotificationType(title = '') {
@@ -262,46 +305,7 @@ function pendingMoneyRequestsForHost(userId) {
     .sort((a, b) => new Date(a.requested_at) - new Date(b.requested_at));
 }
 
-function pendingRegistrationUsers() {
-  return getState().users
-    .filter(user => !user.is_admin && user.account_status === 'pending')
-    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-}
-
-function syncAdminRegistrationApprovalQueue(user) {
-  if (!user?.is_admin || user.account_status !== 'active') {
-    closeAdminRegistrationApprovalDialog();
-    return;
-  }
-
-  const pending = pendingRegistrationUsers();
-  if (!pending.length) {
-    closeAdminRegistrationApprovalDialog();
-    return;
-  }
-
-  const currentDialog = document.getElementById('admin-registration-queue-modal');
-  if (currentDialog?.open && currentDialog.dataset.userId === pending[0].id) return;
-
-  closeActiveModal();
-  closeHostMoneyApprovalDialog();
-  const applicant = pending[0];
-  showAdminRegistrationApprovalDialog({
-    userId: applicant.id,
-    playerName: applicant.display_name,
-    loginName: applicant.login_name,
-    email: applicant.email,
-    requestedText: new Date(applicant.created_at).toLocaleString(),
-    queuePosition: 1,
-    queueTotal: pending.length
-  });
-}
-
 function syncHostMoneyApprovalQueue(user) {
-  if (document.getElementById('admin-registration-queue-modal')?.open) {
-    closeHostMoneyApprovalDialog();
-    return;
-  }
   if (!user || user.account_status !== 'active') {
     closeHostMoneyApprovalDialog();
     return;
@@ -334,19 +338,8 @@ function syncHostMoneyApprovalQueue(user) {
   });
 }
 
-function syncFinalResultPopup(user, notifications) {
-  if (!user || user.account_status !== 'active') return;
-  if (document.getElementById('admin-registration-queue-modal')?.open || document.getElementById('host-money-queue-modal')?.open || document.getElementById('active-modal')?.open) return;
-
-  const pendingResults = notifications
-    .filter(notification => notification.user_id === user.id && notification.delivery === 'final_result' && !notification.read_at)
-    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-  const notification = pendingResults[0];
-  if (!notification) return;
-
-  const existing = document.getElementById('final-result-modal');
-  if (existing?.open && existing.dataset.notificationId === notification.id) return;
-  const result = notification.result_summary || {};
+function showNotificationResult(notification) {
+  const result = notification?.result_summary || {};
   showFinalResultDialog({
     notificationId: notification.id,
     sessionName: result.session_name || sessionById(notification.session_id)?.name || 'Finished table',
@@ -358,8 +351,7 @@ function syncFinalResultPopup(user, notifications) {
     onDone: () => {
       markNotificationRead(notification.id)
         .then(() => refreshRemoteActivity({ quiet: true }))
-        .then(() => requestAnimationFrame(() => syncFinalResultPopup(currentUser(), unreadNotifications(currentUser()?.id))))
-        .catch(error => showToast(error.message || 'Could not clear the result.', 'error'));
+        .catch(error => showToast(error.message || 'Could not mark the result as read.', 'error'));
     }
   });
 }
@@ -369,9 +361,8 @@ async function signOut(message = '') {
   unsubscribeFromProfiles();
   unsubscribeFromPokeratActivity();
   closeActiveModal();
-  closeAdminRegistrationApprovalDialog();
   closeHostMoneyApprovalDialog();
-  surfacedNotificationIds.clear();
+  resetNotificationBaseline();
   setState({ currentUserId: null });
   persistState();
   navigate('login');
@@ -404,7 +395,7 @@ async function refreshRemoteProfiles({ routeAfterApproval = true } = {}) {
   persistState();
 
   if (routeAfterApproval && previous?.account_status === 'pending' && profile.account_status === 'active') {
-    await refreshRemoteActivity({ quiet: true });
+    await refreshRemoteActivity({ quiet: true, seedNotifications: true });
     startActivityRealtime();
     navigate(defaultRouteForUser(profile));
     triggerHapticFeedback('approved', { force: true });
@@ -423,11 +414,16 @@ function mergeActivityUsers(activityUsers, profile = currentUser()) {
   return mergeRemoteProfiles(activityUsers || [], profile || null);
 }
 
-async function refreshRemoteActivity({ quiet = false } = {}) {
-  if (activityRefreshPromise) return activityRefreshPromise;
+async function refreshRemoteActivity({ quiet = false, seedNotifications = false } = {}) {
+  if (activityRefreshPromise) {
+    const activity = await activityRefreshPromise;
+    if (seedNotifications) seedNotificationBaseline(activity.notifications || []);
+    return activity;
+  }
   activityRefreshPromise = (async () => {
     try {
       const activity = await loadPokeratActivity();
+      if (seedNotifications) seedNotificationBaseline(activity.notifications || []);
       const profile = currentUser();
       setState({
         ...activity,
@@ -518,15 +514,12 @@ function render() {
   const memberSessions = sessionsForUser(user.id);
   const sessions = visibleSessionsForUser(user.id);
   const requests = requestsForUser(user.id);
-  const effectiveRoute = route;
+  const effectiveRoute = route.page === 'sessions' ? { page: 'home', id: '' } : route;
   let content;
 
   switch (effectiveRoute.page) {
     case 'home':
       content = homeView({ sessions, requests, profile: user });
-      break;
-    case 'sessions':
-      content = sessionsView(sessions, user.id);
       break;
     case 'requests':
       content = requestsView({ requests, userId: user.id });
@@ -549,8 +542,23 @@ function render() {
       content = historyView({ sessions: memberSessions, profileId: user.id });
       break;
     case 'profile':
-      content = profileView(user, user, memberSessions);
+      content = profileView(user);
       break;
+    case 'player': {
+      const player = userById(effectiveRoute.id);
+      content = player
+        ? playerProfileView({
+            player,
+            performance: buildPlayerPerformance({
+              userId: player.id,
+              sessions: state.sessions,
+              sessionResults: state.sessionResults
+            }),
+            isCurrentUser: player.id === user.id
+          })
+        : '<section class="simple-panel"><h1>Player not found</h1><p>This profile is unavailable.</p><a class="button button--primary" href="#/leaderboard">Back to leaderboard</a></section>';
+      break;
+    }
     case 'admin':
       content = user.is_admin
         ? adminView(state.users, adminLogs(), state.reports, user.id)
@@ -566,29 +574,23 @@ function render() {
             requests,
             userId: user.id
           })
-        : '<section class="simple-panel"><h1>Cannot open this table</h1><p>Join it first or log in with the correct account.</p><a class="button button--primary" href="#/sessions">Back to tables</a></section>';
+        : '<section class="simple-panel"><h1>Cannot open this table</h1><p>Join it first or log in with the correct account.</p><a class="button button--primary" href="#/home">Back home</a></section>';
       break;
     }
     default:
       content = homeView({ sessions, requests, profile: user });
   }
 
-  const pending = [...requests.join, ...requests.buyin, ...requests.cashout]
-    .filter(request => request.status?.startsWith('pending')).length;
   const notifications = unreadNotifications(user.id);
   app.innerHTML = appShell({
     profile: user,
     isAdmin: Boolean(user.is_admin),
-    route: effectiveRoute.page === 'session' ? `#/session/${effectiveRoute.id}` : `#/${effectiveRoute.page}`,
+    route: effectiveRoute.page === 'session' ? `#/session/${effectiveRoute.id}` : effectiveRoute.page === 'player' ? '#/leaderboard' : `#/${effectiveRoute.page}`,
     content,
-    unreadCount: pending,
     notificationCount: notifications.length
   });
   requestAnimationFrame(() => {
     syncSessionTimerUpdates();
-    syncAdminRegistrationApprovalQueue(user);
-    syncHostMoneyApprovalQueue(user);
-    syncFinalResultPopup(user, notifications);
     surfaceNewNotifications(user.id, notifications);
   });
 }
@@ -596,7 +598,7 @@ function render() {
 async function bootstrap() {
   document.documentElement.dataset.theme = localStorage.getItem('pokerat-theme') || 'dark';
   const data = loadAppData();
-  data.notifications.forEach(notification => surfacedNotificationIds.add(notification.id));
+  seedNotificationBaseline(data.notifications);
   setState({ ...data, loading: true });
 
   try {
@@ -621,6 +623,7 @@ async function bootstrap() {
     if (authenticatedProfile?.account_status === 'active') {
       const activity = await loadPokeratActivity();
       Object.assign(data, activity);
+      seedNotificationBaseline(data.notifications || []);
       data.users = mergeRemoteProfiles(activity.users || [], authenticatedProfile);
     } else {
       data.sessions = [];
@@ -664,6 +667,7 @@ async function bootstrap() {
   bindEvents();
   onAuthStateChange((event) => {
     if (event === 'SIGNED_OUT') {
+      resetNotificationBaseline();
       unsubscribeFromProfiles();
       unsubscribeFromPokeratActivity();
       setState({
@@ -732,34 +736,6 @@ function bindEvents() {
       return;
     }
 
-    if (event.target.closest('[data-admin-hard-reset]')) {
-      const user = currentUser();
-      if (!user?.is_admin) throw new Error('Admin only.');
-      const accepted = await confirmDialog({
-        title: 'Hard reset everything?',
-        message: 'All registered users and all activity will be deleted. The app will return to first-time administrator setup.',
-        confirmText: 'Hard reset',
-        destructive: true
-      });
-      if (!accepted) return;
-
-      closeActiveModal();
-      closeAdminRegistrationApprovalDialog();
-      closeHostMoneyApprovalDialog();
-      surfacedNotificationIds.clear();
-      await runAdminAccountAction('hard_reset');
-      await logoutAccount().catch(() => {});
-      unsubscribeFromProfiles();
-      unsubscribeFromPokeratActivity();
-      const fresh = resetAppData();
-      fresh.currentUserId = null;
-      fresh.meta = { ...(fresh.meta || {}), hasActiveAdministrator: false };
-      setState({ ...fresh, loading: false, error: '' });
-      persistState();
-      navigate('setup');
-      showToast('Hard reset complete. Create the first administrator.');
-      return;
-    }
 
     if (event.target.closest('#theme-toggle')) {
       const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
@@ -769,7 +745,7 @@ function bindEvents() {
     }
 
     if (event.target.closest('#notification-button')) {
-      openModal('notifications', { notifications: unreadNotifications(currentUser().id) });
+      openModal('notifications', { notifications: notificationsForUser(currentUser().id) });
       return;
     }
 
@@ -812,11 +788,31 @@ function bindEvents() {
       return;
     }
 
+    const notificationAction = event.target.closest('[data-open-notification]');
+    if (notificationAction) {
+      const notification = getState().notifications.find(item => item.id === notificationAction.dataset.openNotification);
+      if (!notification) throw new Error('Notification not found.');
+      closeActiveModal();
+      if (notification.delivery === 'final_result' && notification.result_summary) {
+        showNotificationResult(notification);
+      } else {
+        await markNotificationRead(notification.id);
+        await refreshRemoteActivity({ quiet: true });
+        if (notification.action_hash) navigate(notification.action_hash.replace(/^#\//, ''));
+      }
+      return;
+    }
+
+    if (event.target.closest('[data-review-money-requests]')) {
+      syncHostMoneyApprovalQueue(currentUser());
+      return;
+    }
+
     if (event.target.closest('[data-mark-notifications-read]')) {
       await markAllNotificationsRead();
       await refreshRemoteActivity({ quiet: true });
       closeActiveModal();
-      showToast('Notifications cleared.');
+      showToast('Notifications marked as read.');
       return;
     }
 
@@ -830,7 +826,7 @@ function bindEvents() {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) updateVisibleSessionTimers();
   });
-    window.addEventListener('resize', closeMemberMenus);
+  window.addEventListener('resize', closeMemberMenus);
   window.addEventListener('scroll', closeMemberMenus, true);
 }
 
@@ -858,7 +854,7 @@ async function handleSubmit(event) {
         meta: { ...getState().meta, hasActiveAdministrator: true }
       });
       persistState();
-      await refreshRemoteActivity({ quiet: true });
+      await refreshRemoteActivity({ quiet: true, seedNotifications: true });
       startProfileRealtime();
       startActivityRealtime();
       navigate('admin');
@@ -874,6 +870,7 @@ async function handleSubmit(event) {
       if (lock.locked) throw new Error(`Too many attempts. Try again in ${lock.secondsRemaining} seconds.`);
       if (!identifier || !password) throw new Error('Username/email or password is incorrect.');
 
+      resetNotificationBaseline();
       let loginUser;
       try {
         loginUser = await loginAccount(identifier, password, data.remember === 'on');
@@ -893,7 +890,7 @@ async function handleSubmit(event) {
       startProfileRealtime();
 
       if (loginUser.account_status === 'active') {
-        await refreshRemoteActivity({ quiet: true });
+        await refreshRemoteActivity({ quiet: true, seedNotifications: true });
         startActivityRealtime();
         navigate(defaultRouteForUser(loginUser));
         triggerHapticFeedback('approved', { force: true });
@@ -968,6 +965,68 @@ async function handleSubmit(event) {
       await refreshRemoteProfiles({ routeAfterApproval: false });
       closeActiveModal();
       showToast('Temporary password saved.');
+      return;
+    }
+
+    if (form.id === 'review-report-form') {
+      if (!user.is_admin) throw new Error('Admin only.');
+      const report = getState().reports.find(item => item.id === String(data.reportId || ''));
+      if (!report) throw new Error('Report not found.');
+      const status = String(data.status || '');
+      if (!['reviewing', 'resolved', 'dismissed'].includes(status)) throw new Error('Invalid report status.');
+      const note = String(data.note || '').trim();
+      if (status !== 'reviewing' && !note) throw new Error('A resolution note is required.');
+      await reviewSessionReport(report.id, status, note || 'Under review');
+      await refreshRemoteActivity({ quiet: true });
+      closeActiveModal();
+      showToast('Report status updated.');
+      return;
+    }
+
+    if (form.id === 'admin-account-status-form') {
+      if (!user.is_admin) throw new Error('Admin only.');
+      const targetUserId = String(data.userId || '');
+      const status = String(data.status || '');
+      const reason = String(data.reason || '').trim();
+      if (!['active', 'suspended'].includes(status)) throw new Error('Invalid account status.');
+      if (targetUserId === user.id) throw new Error('You cannot change the account you are using.');
+      const targetUser = userById(targetUserId);
+      if (!targetUser) throw new Error('Account not found.');
+      if (status === 'suspended') {
+        if (!reason) throw new Error('A suspension reason is required.');
+        const openHosted = getState().sessions.filter(session =>
+          session.host_user_id === targetUserId && ['lobby', 'active'].includes(session.status)
+        );
+        if (openHosted.length) {
+          throw new Error(`Transfer or close this user’s open table${openHosted.length === 1 ? '' : 's'} first: ${openHosted.map(session => session.name).join(', ')}.`);
+        }
+      }
+      await runAdminAccountAction('set_status', { userId: targetUserId, status, reason });
+      await refreshRemoteProfiles({ routeAfterApproval: false });
+      closeActiveModal();
+      showToast(status === 'suspended' ? 'Account suspended.' : 'Account restored.');
+      return;
+    }
+
+    if (form.id === 'hard-reset-form') {
+      if (!user.is_admin) throw new Error('Admin only.');
+      if (String(data.confirmation || '').trim() !== 'RESET POKERAT') {
+        throw new Error('Type RESET POKERAT exactly to continue.');
+      }
+      closeHostMoneyApprovalDialog();
+      resetNotificationBaseline();
+      await runAdminAccountAction('hard_reset');
+      await logoutAccount().catch(() => {});
+      unsubscribeFromProfiles();
+      unsubscribeFromPokeratActivity();
+      const fresh = resetAppData();
+      fresh.currentUserId = null;
+      fresh.meta = { ...(fresh.meta || {}), hasActiveAdministrator: false };
+      setState({ ...fresh, loading: false, error: '' });
+      persistState();
+      closeActiveModal();
+      navigate('setup');
+      showToast('Hard reset complete. Create the first administrator.');
       return;
     }
 
@@ -1051,13 +1110,15 @@ async function handleSubmit(event) {
       const displayName = String(data.displayName || '').trim().replace(/\s+/g, ' ');
       const nameError = validateDisplayName(displayName);
       if (nameError) throw new Error(nameError);
-      const emailError = validateEmail(String(data.email || ''));
-      if (emailError) throw new Error(emailError);
-      const updated = await updateOwnProfile({ displayName, email: String(data.email || '') });
+      if (displayName === user.display_name) {
+        showToast('Your display name is unchanged.');
+        return;
+      }
+      const updated = await updateOwnProfile({ displayName });
       const users = mergeRemoteProfiles([updated], updated);
       setState({ users, currentUserId: updated.id });
       persistState();
-      showToast('Profile saved.');
+      showToast('Display name saved. You can change it again in 90 days.');
     }
   } catch (error) {
     console.error(error);
@@ -1077,9 +1138,6 @@ async function handleAction(event) {
   const target = event.target.closest('button');
   if (!target || !currentUser()) return;
   const user = currentUser();
-  const registrationDialog = target.closest('#admin-registration-queue-modal');
-  if (registrationDialog) registrationDialog.querySelectorAll('button').forEach(button => { button.disabled = true; });
-
   try {
     if (target.dataset.joinOpenTable) {
       setButtonBusy(target, true, 'Joining…');
@@ -1105,7 +1163,7 @@ async function handleAction(event) {
       if (!accepted) return;
       await cancelPokerTable(session.id);
       await refreshRemoteActivity({ quiet: true });
-      navigate('sessions');
+      navigate('home');
       showToast('Table cancelled.');
     } else if (target.dataset.copyCode) {
       await copyText(target.dataset.copyCode);
@@ -1191,24 +1249,18 @@ async function handleAction(event) {
       if (!applicant || !['pending', 'rejected'].includes(applicant.account_status)) throw new Error('This account request is no longer waiting.');
       await runAdminAccountAction('set_status', { userId: applicantId, status: 'active' });
       await refreshRemoteProfiles({ routeAfterApproval: false });
-      closeAdminRegistrationApprovalDialog(applicantId);
       triggerHapticFeedback('approved', { force: true });
       showToast(`${applicant.display_name} can now log in.`);
-      requestAnimationFrame(() => syncAdminRegistrationApprovalQueue(currentUser()));
     } else if (target.dataset.adminRegistrationReject) {
       if (!user.is_admin) throw new Error('Admin only.');
       const applicantId = target.dataset.adminRegistrationReject;
       const applicant = userById(applicantId);
       if (!applicant || applicant.account_status !== 'pending') throw new Error('This account request is no longer waiting.');
-      const queueDialog = target.closest('#admin-registration-queue-modal');
-      const typedReason = queueDialog?.querySelector('[name="adminRegistrationRejectReason"]')?.value?.trim();
-      const reason = typedReason || 'Registration not approved by admin.';
+      const reason = 'Registration not approved by admin.';
       await runAdminAccountAction('set_status', { userId: applicantId, status: 'rejected', reason });
       await refreshRemoteProfiles({ routeAfterApproval: false });
-      closeAdminRegistrationApprovalDialog(applicantId);
       triggerHapticFeedback('rejected', { force: true });
       showToast('Registration rejected.', 'error');
-      requestAnimationFrame(() => syncAdminRegistrationApprovalQueue(currentUser()));
     } else if (target.dataset.adminResetPassword) {
       if (!user.is_admin) throw new Error('Admin only.');
       const targetUser = userById(target.dataset.adminResetPassword);
@@ -1241,36 +1293,31 @@ async function handleAction(event) {
       if (!user.is_admin) throw new Error('Admin only.');
       const report = getState().reports.find(item => item.id === target.dataset.reviewReport);
       if (!report) throw new Error('Report not found.');
-      const status = target.dataset.reportStatus;
-      const note = (prompt(status === 'reviewing' ? 'Optional review note:' : 'Resolution note:') || '').trim();
-      if (status !== 'reviewing' && !note) return;
-
-      await reviewSessionReport(report.id, status, note || 'Under review');
-      await refreshRemoteActivity({ quiet: true });
-      showToast('Report status updated.');
+      openModal('review-report', {
+        reportId: report.id,
+        status: target.dataset.reportStatus,
+        sessionName: report.session_name,
+        reporterName: report.reporter_name
+      });
     } else if (target.dataset.adminStatus) {
       if (!user.is_admin) throw new Error('Admin only.');
       const targetUserId = target.dataset.userId;
-      if (targetUserId === user.id) throw new Error('You cannot suspend the account you are using.');
-
+      if (targetUserId === user.id) throw new Error('You cannot change the account you are using.');
+      const targetUser = userById(targetUserId);
+      if (!targetUser) throw new Error('Account not found.');
       if (target.dataset.adminStatus === 'suspended') {
         const openHosted = getState().sessions.filter(session =>
           session.host_user_id === targetUserId && ['lobby', 'active'].includes(session.status)
         );
         if (openHosted.length) {
-          throw new Error(`Transfer or close this user’s open session${openHosted.length === 1 ? '' : 's'} first: ${openHosted.map(session => session.name).join(', ')}.`);
+          throw new Error(`Transfer or close this user’s open table${openHosted.length === 1 ? '' : 's'} first: ${openHosted.map(session => session.name).join(', ')}.`);
         }
       }
-
-      const reason = (prompt(`Reason for changing this account to ${target.dataset.adminStatus}:`) || '').trim();
-      if (!reason) return;
-      await runAdminAccountAction('set_status', {
+      openModal('admin-account-status', {
         userId: targetUserId,
-        status: target.dataset.adminStatus,
-        reason
+        userName: targetUser.display_name,
+        status: target.dataset.adminStatus
       });
-      await refreshRemoteProfiles({ routeAfterApproval: false });
-      showToast('Account status updated.');
     }
   } catch (error) {
     console.error(error);
@@ -1279,16 +1326,6 @@ async function handleAction(event) {
     if (queueDialog) {
       setHostQueueBusy(queueDialog, false);
       const errorElement = queueDialog.querySelector('.host-buyin-queue__error');
-      if (errorElement) {
-        errorElement.hidden = false;
-        errorElement.textContent = error.message || 'Something went wrong.';
-      }
-      return;
-    }
-    const registrationDialog = target?.closest?.('#admin-registration-queue-modal');
-    if (registrationDialog) {
-      registrationDialog.querySelectorAll('button').forEach(button => { button.disabled = false; });
-      const errorElement = registrationDialog.querySelector('.admin-registration-queue__error');
       if (errorElement) {
         errorElement.hidden = false;
         errorElement.textContent = error.message || 'Something went wrong.';
@@ -1318,7 +1355,7 @@ function currentRouteSession(allowedStatuses = null) {
 
 function requireSessionStatus(session, allowedStatuses, customMessage = '') {
   if (!session || !allowedStatuses.includes(session.status)) {
-    throw new Error(customMessage || `This action is unavailable while the session is ${session?.status || 'unavailable'}.`);
+    throw new Error(customMessage || `This action is unavailable while the table is ${session?.status || 'unavailable'}.`);
   }
 }
 

@@ -95,3 +95,55 @@ export function buildClosedTableLeaderboard({ sessions = [], transactions = [], 
       net: fromCents(entry.netCents)
     }));
 }
+
+export function buildPlayerPerformance({ userId, sessions = [], sessionResults = [] } = {}) {
+  const sessionMap = new Map(sessions.map(session => [session.id, session]));
+  const results = sessionResults
+    .filter(result => result?.user_id === userId)
+    .filter(result => toCents(result.cash_in) !== 0 || toCents(result.cash_out) !== 0)
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+  let cumulativeCents = 0;
+  let wins = 0;
+  let losses = 0;
+  let even = 0;
+  let cashInCents = 0;
+  let cashOutCents = 0;
+
+  const points = results.map((result, index) => {
+    const netCents = toCents(result.net);
+    cumulativeCents += netCents;
+    cashInCents += toCents(result.cash_in);
+    cashOutCents += toCents(result.cash_out);
+    if (netCents > 0) wins += 1;
+    else if (netCents < 0) losses += 1;
+    else even += 1;
+
+    const session = sessionMap.get(result.session_id);
+    return {
+      index: index + 1,
+      sessionId: result.session_id,
+      sessionName: session?.name || `Table ${index + 1}`,
+      sessionCode: session?.session_code || '',
+      playedAt: result.created_at,
+      cashIn: fromCents(toCents(result.cash_in)),
+      cashOut: fromCents(toCents(result.cash_out)),
+      net: fromCents(netCents),
+      cumulativeNet: fromCents(cumulativeCents),
+      outcome: netCents > 0 ? 'win' : netCents < 0 ? 'loss' : 'even'
+    };
+  });
+
+  return {
+    tableCount: points.length,
+    wins,
+    losses,
+    even,
+    winRate: points.length ? Math.round((wins / points.length) * 100) : 0,
+    cashIn: fromCents(cashInCents),
+    cashOut: fromCents(cashOutCents),
+    net: fromCents(cumulativeCents),
+    points
+  };
+}
+

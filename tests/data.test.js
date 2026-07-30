@@ -39,6 +39,7 @@ test('clearing activity preserves registered users', () => {
     rejected_at: null,
     rejected_by: null,
     last_login_at: null,
+    display_name_changed_at: null,
     created_at: new Date().toISOString()
   });
   data.sessions.push({ id: 's-one', session_code: 'PKR-ABCD', name: 'Game', host_user_id: '11111111-1111-4111-8111-111111111111', status: 'lobby', created_at: new Date().toISOString() });

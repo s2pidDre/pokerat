@@ -17,11 +17,15 @@ create table if not exists public.profiles (
   rejected_at timestamptz,
   rejected_by uuid references public.profiles(id) on delete set null,
   last_login_at timestamptz,
+  display_name_changed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint profiles_username_format check (username ~ '^[a-z0-9_]{3,20}$'),
   constraint profiles_display_name_length check (char_length(display_name) between 3 and 24)
 );
+
+-- Existing installations need this column when the schema is run again.
+alter table public.profiles add column if not exists display_name_changed_at timestamptz;
 
 create unique index if not exists profiles_username_unique on public.profiles (lower(username));
 create unique index if not exists profiles_email_unique on public.profiles (lower(email));
@@ -176,13 +180,35 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  current_profile public.profiles;
+  next_change_at timestamptz;
 begin
   if auth.uid() is null then raise exception 'Authentication required.'; end if;
   p_display_name := trim(regexp_replace(coalesce(p_display_name, ''), '\s+', ' ', 'g'));
   if char_length(p_display_name) < 3 or char_length(p_display_name) > 24 then
     raise exception 'Display name must contain 3-24 characters.';
   end if;
-  update public.profiles set display_name = p_display_name, updated_at = now() where id = auth.uid();
+
+  select * into current_profile
+  from public.profiles
+  where id = auth.uid()
+  for update;
+
+  if current_profile.id is null then raise exception 'Profile not found.'; end if;
+  if current_profile.display_name = p_display_name then return; end if;
+
+  next_change_at := current_profile.display_name_changed_at + interval '90 days';
+  if current_profile.display_name_changed_at is not null and next_change_at > now() then
+    raise exception 'You can change your display name again on %.',
+      to_char(next_change_at at time zone 'Asia/Manila', 'FMMonth DD, YYYY at FMHH12:MI AM');
+  end if;
+
+  update public.profiles
+  set display_name = p_display_name,
+      display_name_changed_at = now(),
+      updated_at = now()
+  where id = auth.uid();
 end;
 $$;
 

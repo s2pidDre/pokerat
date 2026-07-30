@@ -30,6 +30,7 @@ export function mapProfile(profile) {
     rejected_at: profile.rejected_at || null,
     rejected_by: profile.rejected_by || null,
     last_login_at: profile.last_login_at || null,
+    display_name_changed_at: profile.display_name_changed_at || null,
     created_at: profile.created_at || new Date().toISOString()
   };
 }
@@ -150,19 +151,12 @@ export async function logoutAccount() {
   clearRememberPreference();
 }
 
-export async function updateOwnProfile({ displayName, email }) {
+export async function updateOwnProfile({ displayName }) {
   const displayError = validateDisplayName(displayName);
   if (displayError) throw new Error(displayError);
-  const emailError = validateEmail(email);
-  if (emailError) throw new Error(emailError);
 
-  const cleanEmail = normalizeEmail(email);
   const { data: userData, error: userError } = await supabase.auth.getUser();
   if (userError || !userData.user) throw new Error('Log in again.');
-  if (normalizeEmail(userData.user.email) !== cleanEmail) {
-    const { error } = await supabase.auth.updateUser({ email: cleanEmail });
-    if (error) throw error;
-  }
   const { error: profileError } = await supabase.rpc('update_own_profile', { p_display_name: String(displayName).trim() });
   if (profileError) throw profileError;
   return getCurrentProfile();

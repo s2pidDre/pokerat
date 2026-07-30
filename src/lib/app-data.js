@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'pokerat-app-v1';
 const LEGACY_STORAGE_KEY = 'pokerat-local-prototype-v1';
-const SCHEMA_VERSION = 15;
+const SCHEMA_VERSION = 16;
 
 const LEGACY_SEED_USER_IDS = new Set(['u-host', 'u-player', 'u-carlo', 'u-dana', 'u-admin']);
 const LEGACY_SEED_SESSION_IDS = new Set(['s-friday', 's-weekend', 's-sunday', 's-open', 's-closed']);
@@ -64,6 +64,7 @@ function normalizeUser(user) {
     rejected_at: stringOrEmpty(user.rejected_at) || null,
     rejected_by: stringOrEmpty(user.rejected_by) || null,
     last_login_at: stringOrEmpty(user.last_login_at) || null,
+    display_name_changed_at: stringOrEmpty(user.display_name_changed_at) || null,
     created_at: stringOrEmpty(user.created_at) || new Date().toISOString()
   };
 }

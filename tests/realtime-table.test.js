@@ -42,3 +42,38 @@ test('database schema enforces one globally open table and exposes it for discov
   assert.match(sql, /status in \('lobby', 'active'\)/);
   assert.match(sql, /A table is already open\. Join it or wait until it is finished\./);
 });
+
+
+test('profile schema enforces the 90-day display-name cooldown', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const sql = await readFile(new URL('../supabase/schema.sql', import.meta.url), 'utf8');
+  assert.match(sql, /display_name_changed_at timestamptz/);
+  assert.match(sql, /interval '90 days'/);
+  assert.match(sql, /if current_profile\.display_name = p_display_name then return/);
+});
+
+test('player performance builds a closed-table win and loss trend', async () => {
+  const { buildPlayerPerformance } = await import('../src/utils/leaderboard.js');
+  const performance = buildPlayerPerformance({
+    userId: 'a',
+    sessions: [
+      { id: 'one', name: 'Friday Game', session_code: 'PKR-ONE' },
+      { id: 'two', name: 'Sunday Game', session_code: 'PKR-TWO' },
+      { id: 'three', name: 'Even Game', session_code: 'PKR-THR' }
+    ],
+    sessionResults: [
+      { session_id: 'two', user_id: 'a', cash_in: 500, cash_out: 300, net: -200, created_at: '2026-07-02T10:00:00Z' },
+      { session_id: 'one', user_id: 'a', cash_in: 500, cash_out: 800, net: 300, created_at: '2026-07-01T10:00:00Z' },
+      { session_id: 'three', user_id: 'a', cash_in: 200, cash_out: 200, net: 0, created_at: '2026-07-03T10:00:00Z' }
+    ]
+  });
+
+  assert.equal(performance.tableCount, 3);
+  assert.equal(performance.wins, 1);
+  assert.equal(performance.losses, 1);
+  assert.equal(performance.even, 1);
+  assert.equal(performance.winRate, 33);
+  assert.equal(performance.net, 100);
+  assert.deepEqual(performance.points.map(point => point.cumulativeNet), [300, 100, 100]);
+  assert.deepEqual(performance.points.map(point => point.outcome), ['win', 'loss', 'even']);
+});

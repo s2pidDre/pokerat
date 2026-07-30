@@ -160,7 +160,6 @@ export function appShell({ profile, isAdmin, route, content, notificationCount =
   const page = route.replace(/^#\/?/, '').split('/')[0] || 'home';
   const nav = [
     ['home', '⌂', 'Home'],
-    ['sessions', '▣', 'Tables'],
     ['leaderboard', leaderboardIcon(), 'Leaderboard'],
     ['history', '↺', 'History'],
     ['profile', '●', 'Profile']
@@ -186,7 +185,7 @@ export function appShell({ profile, isAdmin, route, content, notificationCount =
         <header class="topbar">
           <div class="mobile-brand"><span class="brand-mark">P</span><strong>POKERAT</strong></div>
           <div class="topbar-actions">
-            <button id="notification-button" class="icon-button notification-button" aria-label="Notifications">🔔${notificationCount ? `<b>${notificationCount}</b>` : ''}</button>
+            <button id="notification-button" class="icon-button notification-button" aria-label="Notifications">🔔${notificationCount ? `<b>${notificationCount > 99 ? '99+' : notificationCount}</b>` : ''}</button>
             <button id="theme-toggle" class="icon-button" aria-label="Change theme">◐</button>
             <button data-logout class="button button--ghost button--small">Log out</button>
           </div>
@@ -197,44 +196,27 @@ export function appShell({ profile, isAdmin, route, content, notificationCount =
     </div>`;
 }
 
-export function pageHeader(_eyebrow, title, description = '', actions = '') {
+export function pageHeader(title, description = '', actions = '') {
   return `<header class="page-header"><div><h1>${title}</h1>${description ? `<p>${description}</p>` : ''}</div>${actions ? `<div class="page-actions">${actions}</div>` : ''}</header>`;
 }
 
 export function homeView({ sessions, requests, profile }) {
-  const openSessions = sessions.filter(session => !['closed', 'cancelled'].includes(session.status));
+  const openSession = sessions.find(session => !['closed', 'cancelled'].includes(session.status)) || null;
   const pending = pendingRequests(requests);
   const hostPending = pending.filter(request => request.session?.host_user_id === profile.id);
   const firstName = escapeHtml(profile.display_name.split(' ')[0]);
-  const openTableExists = openSessions.length > 0;
 
-  return `
-    ${pageHeader('', `Hi, ${firstName}`, 'What do you want to do?')}
+  const startActions = !openSession ? `
     <section class="big-actions">
-      ${openTableExists
-        ? '<button class="big-action big-action--primary" disabled title="Finish or cancel the open table before creating another."><span>◆</span><strong>Table already open</strong></button>'
-        : '<button class="big-action big-action--primary" data-open="create-session"><span>＋</span><strong>Create table</strong></button>'}
-      <button class="big-action" data-open="join-session"><span>→</span><strong>Join table</strong></button>
-    </section>
+      <button class="big-action big-action--primary" data-open="create-session"><span>＋</span><strong>Create table</strong></button>
+      <button class="big-action" data-open="join-session"><span>⌕</span><strong>Join by code</strong></button>
+    </section>` : '';
 
-    ${hostPending.length ? `<section class="simple-panel alert-panel"><div><strong>${hostPending.length} request${hostPending.length === 1 ? '' : 's'} waiting</strong><span>Open the table to approve or reject.</span></div><a class="button button--primary" href="#/session/${hostPending[0].session_id}">Review</a></section>` : ''}
-
-    <section class="section-block">
-      <div class="section-heading"><h2>${openSessions.length ? 'Open table' : 'No table yet'}</h2>${openSessions.length > 2 ? '<a href="#/sessions">See all</a>' : ''}</div>
-      <div class="card-grid">${openSessions.length ? openSessions.map(session => sessionCard(session, profile.id)).join('') : emptyState('No open table', 'Create a table or wait for a friend to create one.')}</div>
-    </section>`;
-}
-
-export function sessionsView(sessions, profileId) {
-  const open = sessions.filter(session => !['closed', 'cancelled'].includes(session.status));
-  const finished = sessions.filter(session => ['closed', 'cancelled'].includes(session.status));
-  const createButton = open.length
-    ? '<button class="button button--primary" disabled title="Only one open table is allowed.">Table already open</button>'
-    : '<button class="button button--primary" data-open="create-session">Create</button>';
   return `
-    ${pageHeader('', 'Tables', '', `<button class="button button--secondary" data-open="join-session">Join</button>${createButton}`)}
-    <section class="section-block"><div class="section-heading"><h2>Open</h2><span>${open.length}</span></div><div class="card-grid">${open.length ? open.map(session => sessionCard(session, profileId)).join('') : '<p class="empty-copy">No open tables.</p>'}</div></section>
-    <section class="section-block"><div class="section-heading"><h2>Finished</h2><span>${finished.length}</span></div><div class="card-grid">${finished.length ? finished.map(session => sessionCard(session, profileId)).join('') : '<p class="empty-copy">No finished tables.</p>'}</div></section>`;
+    ${pageHeader(`Hi, ${firstName}`, openSession ? 'The current table is ready below.' : 'Start a table or join with an invite code.')}
+    ${startActions}
+    ${hostPending.length ? `<section class="simple-panel alert-panel"><div><strong>${hostPending.length} request${hostPending.length === 1 ? '' : 's'} waiting</strong><span>Open the table to review them.</span></div><a class="button button--primary" href="#/session/${hostPending[0].session_id}">Review</a></section>` : ''}
+    ${openSession ? `<section class="section-block"><div class="section-heading"><h2>Open table</h2></div><div class="card-grid">${sessionCard(openSession, profile.id)}</div></section>` : ''}`;
 }
 
 export function sessionCard(session, profileId) {
@@ -309,7 +291,7 @@ export function sessionView({ session, members, transactions, requests, userId }
 
       ${mainActions ? `<section class="main-actions playing-actions">${mainActions}</section>` : ''}
 
-      ${isHost && waitingForHost.length ? `<div class="playing-request-alert"><strong>${waitingForHost.length} request${waitingForHost.length === 1 ? '' : 's'} waiting</strong><span>Requests appear one at a time.</span></div>` : ''}
+      ${isHost && waitingForHost.length ? `<div class="playing-request-alert"><div><strong>${waitingForHost.length} request${waitingForHost.length === 1 ? '' : 's'} waiting</strong><span>Review them when you are ready.</span></div><button class="button button--secondary button--small" type="button" data-review-money-requests>Review</button></div>` : ''}
       ${!isHost && mineRequests.length ? `<section class="playing-waiting-list">${mineRequests.map(compactPendingRequest).join('')}</section>` : ''}
 
       <details class="simple-details playing-details">
@@ -336,7 +318,7 @@ export function sessionView({ session, members, transactions, requests, userId }
   }
 
   return `
-    ${pageHeader('', escapeHtml(session.name))}
+    ${pageHeader(escapeHtml(session.name))}
 
     ${session.status === 'lobby' ? `<section class="table-code-panel system-window"><span>TABLE CODE</span><strong>${escapeHtml(session.session_code)}</strong><button class="button button--primary" data-copy-code="${escapeHtml(session.session_code)}">Copy code</button></section>` : ''}
 
@@ -395,7 +377,7 @@ export function transactionList(transactions, isHost = false) {
 export function memberList(members, isHost, userId, session) {
   return `<div class="member-list">${members.map(member => {
     const menuId = `member-menu-${member.id}`;
-    return `<article class="member-item"><span class="avatar">${initials(member.profile?.display_name)}</span><div><strong>${escapeHtml(member.profile?.display_name || 'Player')}${member.user_id === userId ? ' (You)' : ''}</strong><small>${member.member_role === 'host' ? 'Host' : 'Player'}</small></div>${isHost && member.user_id !== userId && ['lobby', 'active'].includes(session.status) ? `<button class="member-menu__trigger" data-member-menu-trigger aria-expanded="false" aria-controls="${menuId}" aria-label="Player actions">•••</button><div class="member-menu-popover" id="${menuId}" data-member-menu hidden><button data-transfer-host="${member.user_id}">Make host</button><button class="danger-text" data-remove-member="${member.user_id}">Remove</button></div>` : ''}</article>`;
+    return `<article class="member-item"><a class="player-mini-profile" href="#/player/${member.user_id}" aria-label="View ${escapeHtml(member.profile?.display_name || 'player')} profile"><span class="avatar">${initials(member.profile?.display_name)}</span><span><strong>${escapeHtml(member.profile?.display_name || 'Player')}${member.user_id === userId ? ' (You)' : ''}</strong><small>${member.member_role === 'host' ? 'Host' : 'Player'}</small></span></a>${isHost && member.user_id !== userId && ['lobby', 'active'].includes(session.status) ? `<button class="member-menu__trigger" data-member-menu-trigger aria-expanded="false" aria-controls="${menuId}" aria-label="Player actions">•••</button><div class="member-menu-popover" id="${menuId}" data-member-menu hidden><button data-transfer-host="${member.user_id}">Make host</button><button class="danger-text" data-remove-member="${member.user_id}">Remove</button></div>` : ''}</article>`;
   }).join('')}</div>`;
 }
 
@@ -403,7 +385,7 @@ export function requestsView({ requests, userId }) {
   const all = allRequests(requests).sort((a, b) => new Date(b.requested_at) - new Date(a.requested_at));
   const hostItems = all.filter(request => request.session?.host_user_id === userId && request.status?.startsWith('pending'));
   const myItems = all.filter(request => (request.requester_id === userId || request.user_id === userId) && request.session?.host_user_id !== userId);
-  return `${pageHeader('', 'Requests', 'Open the related table to handle requests.')}<section class="section-block"><div class="request-list">${hostItems.length ? hostItems.map(request => requestCard(request, true)).join('') : '<p class="empty-copy">No requests waiting.</p>'}</div></section>${myItems.length ? `<section class="section-block"><div class="section-heading"><h2>Your requests</h2></div><div class="request-list">${myItems.map(request => requestCard(request, false)).join('')}</div></section>` : ''}`;
+  return `${pageHeader('Requests', 'Open the related table to handle requests.')}<section class="section-block"><div class="request-list">${hostItems.length ? hostItems.map(request => requestCard(request, true)).join('') : '<p class="empty-copy">No requests waiting.</p>'}</div></section>${myItems.length ? `<section class="section-block"><div class="section-heading"><h2>Your requests</h2></div><div class="request-list">${myItems.map(request => requestCard(request, false)).join('')}</div></section>` : ''}`;
 }
 
 export function requestCard(request, hostView) {
@@ -421,7 +403,6 @@ export function requestCard(request, hostView) {
 }
 
 function requestActions(request) {
-  const person = request.requester?.display_name || 'Player';
   if (request.kind === 'join') {
     return `<div class="request-actions"><button class="button button--danger" data-review-join="${request.id}" data-approve="false">Reject</button><button class="button button--primary" data-review-join="${request.id}" data-approve="true">Approve</button></div>`;
   }
@@ -435,26 +416,111 @@ export function leaderboardView({ leaderboard = [], profileId, closedTableCount 
     if (entry.even) recordParts.push(`${entry.even} even`);
     recordParts.push(`${entry.tableCount} table${entry.tableCount === 1 ? '' : 's'}`);
     const netClass = entry.net > 0 ? 'positive' : entry.net < 0 ? 'negative' : '';
-    return `<article class="leaderboard-row ${entry.userId === profileId ? 'is-you' : ''}"><span class="leaderboard-rank">#${entry.rank}</span><span class="avatar leaderboard-avatar">${initials(entry.displayName)}</span><div class="leaderboard-player"><strong>${escapeHtml(entry.displayName)}${entry.userId === profileId ? ' <em>You</em>' : ''}</strong><small>${recordParts.join(' · ')}</small></div><strong class="leaderboard-net ${netClass}">${formatCurrency(entry.net, { signed: true })}</strong></article>`;
+    return `<a class="leaderboard-row ${entry.userId === profileId ? 'is-you' : ''}" href="#/player/${entry.userId}" aria-label="View ${escapeHtml(entry.displayName)} performance"><span class="leaderboard-rank">#${entry.rank}</span><span class="avatar leaderboard-avatar">${initials(entry.displayName)}</span><div class="leaderboard-player"><strong>${escapeHtml(entry.displayName)}${entry.userId === profileId ? ' <em>You</em>' : ''}</strong><small>${recordParts.join(' · ')}</small></div><strong class="leaderboard-net ${netClass}">${formatCurrency(entry.net, { signed: true })}</strong></a>`;
   }).join('');
 
   return `
-    ${pageHeader('', 'Leaderboard', 'Only closed tables count. Nothing changes while a table is active.')}
+    ${pageHeader('Leaderboard', 'Only closed tables count. Nothing changes while a table is active.')}
     <section class="leaderboard-panel system-window">
       <div class="leaderboard-heading"><div><h2>All-time results</h2><p>Total cash-outs minus total cash-ins.</p></div><span>${closedTableCount} closed table${closedTableCount === 1 ? '' : 's'}</span></div>
       <div class="leaderboard-list">${leaderboardRows || '<p class="empty-copy leaderboard-empty">Finish a table to start the leaderboard.</p>'}</div>
     </section>`;
 }
 
-export function historyView({ sessions, profileId }) {
-  const finished = sessions.filter(session => ['closed', 'cancelled'].includes(session.status));
-  return `
-    ${pageHeader('', 'History', 'Finished tables and session durations.')}
-    <section class="section-block"><div class="section-heading"><h2>Finished tables</h2><span>${finished.length}</span></div><div class="card-grid">${finished.length ? finished.map(session => sessionCard(session, profileId)).join('') : emptyState('Nothing here', 'Finished tables will appear here.')}</div></section>`;
+
+function performanceChart(points = []) {
+  if (!points.length) {
+    return '<div class="performance-chart-empty"><span>⌁</span><strong>No performance data yet</strong><p>Closed tables will build this player’s trend.</p></div>';
+  }
+
+  const width = 760;
+  const height = 300;
+  const padding = { top: 28, right: 28, bottom: 42, left: 62 };
+  const values = [0, ...points.map(point => Number(point.cumulativeNet) || 0)];
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  const spread = Math.max(1, rawMax - rawMin);
+  const margin = Math.max(spread * 0.16, Math.max(Math.abs(rawMax), Math.abs(rawMin), 100) * 0.08);
+  const min = rawMin - margin;
+  const max = rawMax + margin;
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+  const x = index => padding.left + (chartWidth * index / Math.max(1, points.length));
+  const y = value => padding.top + ((max - value) / Math.max(1, max - min)) * chartHeight;
+  const coordinates = [{ x: x(0), y: y(0), value: 0 }, ...points.map((point, index) => ({ x: x(index + 1), y: y(point.cumulativeNet), value: point.cumulativeNet, point }))];
+  const line = coordinates.map((coordinate, index) => `${index ? 'L' : 'M'} ${coordinate.x.toFixed(2)} ${coordinate.y.toFixed(2)}`).join(' ');
+  const zeroY = y(0);
+  const ticks = [max, (max + min) / 2, min];
+
+  return `<div class="performance-chart-wrap">
+    <svg class="performance-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Cumulative performance across ${points.length} closed table${points.length === 1 ? '' : 's'}">
+      ${ticks.map(value => `<g class="performance-grid"><line x1="${padding.left}" y1="${y(value).toFixed(2)}" x2="${width - padding.right}" y2="${y(value).toFixed(2)}"></line><text x="${padding.left - 10}" y="${(y(value) + 4).toFixed(2)}" text-anchor="end">${escapeHtml(formatCurrency(value, { signed: true }))}</text></g>`).join('')}
+      <line class="performance-zero" x1="${padding.left}" y1="${zeroY.toFixed(2)}" x2="${width - padding.right}" y2="${zeroY.toFixed(2)}"></line>
+      <path class="performance-line" d="${line}"></path>
+      ${coordinates.slice(1).map(({ x: cx, y: cy, point }) => `<circle class="performance-point performance-point--${point.outcome}" cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="7" role="img" aria-label="${escapeHtml(point.sessionName)}, ${point.outcome}, ${formatCurrency(point.net, { signed: true })}"><title>${escapeHtml(point.sessionName)}: ${formatCurrency(point.net, { signed: true })}; running total ${formatCurrency(point.cumulativeNet, { signed: true })}</title></circle>`).join('')}
+      <text class="performance-axis-label" x="${padding.left}" y="${height - 12}">Start</text>
+      <text class="performance-axis-label" x="${width - padding.right}" y="${height - 12}" text-anchor="end">${points.length} table${points.length === 1 ? '' : 's'}</text>
+    </svg>
+  </div>`;
 }
 
-export function profileView(profile, user, sessions = []) {
-  return `${pageHeader('', 'Profile')}<section class="profile-grid"><article class="simple-panel profile-summary"><span class="avatar avatar--large">${initials(profile.display_name)}</span><h2>${escapeHtml(profile.display_name)}</h2><p>${profile.is_admin ? 'Admin' : 'User'}</p><small>@${escapeHtml(profile.login_name || '')}<br>${escapeHtml(profile.email || 'No email')}</small></article><article class="simple-panel"><form id="profile-form" class="stack"><label>Display name<input name="displayName" value="${escapeHtml(profile.display_name)}" maxlength="24" required></label><label>Email<input name="email" type="email" maxlength="254" value="${escapeHtml(profile.email || '')}" required autocomplete="email"></label>${formError()}<button class="button button--primary" type="submit">Save name</button><button class="button button--secondary" type="button" data-open="change-password">Change password</button><button class="button button--ghost" data-logout type="button">Log out</button></form></article></section>`;
+export function playerProfileView({ player, performance, isCurrentUser = false }) {
+  const netClass = performance.net > 0 ? 'positive' : performance.net < 0 ? 'negative' : '';
+  const recent = [...performance.points].reverse().slice(0, 8);
+  return `
+    ${pageHeader('Player performance', 'Closed tables only.', '<a class="button button--ghost" href="#/leaderboard">Back to leaderboard</a>')}
+    <section class="player-profile-hero system-window">
+      <span class="avatar avatar--large">${initials(player.display_name)}</span>
+      <div><span class="system-tag">${player.is_admin ? 'ADMIN PLAYER' : 'PLAYER'}</span><h2>${escapeHtml(player.display_name)}${isCurrentUser ? ' <small>You</small>' : ''}</h2><p>@${escapeHtml(player.login_name || '')}</p></div>
+      ${isCurrentUser ? '<a class="button button--secondary" href="#/profile">Edit profile</a>' : ''}
+    </section>
+    <section class="performance-stats">
+      <article><span>Win rate</span><strong>${performance.winRate}%</strong><small>${performance.wins}W · ${performance.losses}L${performance.even ? ` · ${performance.even}E` : ''}</small></article>
+      <article><span>Tables</span><strong>${performance.tableCount}</strong><small>Closed results</small></article>
+      <article><span>Total net</span><strong class="${netClass}">${formatCurrency(performance.net, { signed: true })}</strong><small>Cash out − cash in</small></article>
+      <article><span>Total cash out</span><strong>${formatCurrency(performance.cashOut)}</strong><small>Across all results</small></article>
+    </section>
+    <section class="performance-panel system-window">
+      <div class="leaderboard-heading"><div><h2>Performance trend</h2><p>Running net after every closed table. Green points are wins; red points are losses.</p></div><span>${performance.tableCount} result${performance.tableCount === 1 ? '' : 's'}</span></div>
+      ${performanceChart(performance.points)}
+    </section>
+    <section class="section-block">
+      <div class="section-heading"><h2>Recent results</h2></div>
+      <div class="performance-results">${recent.length ? recent.map(point => `<article class="performance-result"><span class="performance-result__outcome performance-result__outcome--${point.outcome}">${point.outcome === 'win' ? 'W' : point.outcome === 'loss' ? 'L' : 'E'}</span><div><strong>${escapeHtml(point.sessionName)}</strong><small>${formatDateTime(point.playedAt)}${point.sessionCode ? ` · ${escapeHtml(point.sessionCode)}` : ''}</small></div><strong class="${point.net > 0 ? 'positive' : point.net < 0 ? 'negative' : ''}">${formatCurrency(point.net, { signed: true })}</strong></article>`).join('') : '<p class="empty-copy">No closed-table results yet.</p>'}</div>
+    </section>`;
+}
+
+export function historyView({ sessions, profileId }) {
+  const finished = sessions.filter(session => ['closed', 'cancelled'].includes(session.status));
+  const description = finished.length
+    ? `${finished.length} finished table${finished.length === 1 ? '' : 's'}.`
+    : 'Closed and cancelled tables will appear here.';
+  return `
+    ${pageHeader('History', description)}
+    <div class="card-grid">${finished.length ? finished.map(session => sessionCard(session, profileId)).join('') : emptyState('Nothing here yet', 'Finish or cancel a table to add it to your history.')}</div>`;
+}
+
+function nameChangeAvailability(profile) {
+  const changedAt = Date.parse(profile.display_name_changed_at || '');
+  if (!Number.isFinite(changedAt)) {
+    return { locked: false, message: 'After saving, you can change your name again in 90 days.' };
+  }
+  const nextChangeAt = changedAt + (90 * 24 * 60 * 60 * 1000);
+  if (nextChangeAt <= Date.now()) {
+    return { locked: false, message: 'Changing your name starts a new 90-day cooldown.' };
+  }
+  const nextDate = new Intl.DateTimeFormat('en-PH', {
+    month: 'long', day: 'numeric', year: 'numeric'
+  }).format(new Date(nextChangeAt));
+  return { locked: true, message: `You can change your name again on ${nextDate}.` };
+}
+
+export function profileView(profile) {
+  const nameChange = nameChangeAvailability(profile);
+  const nameControl = nameChange.locked
+    ? `<div class="profile-name-locked"><span>Display name</span><strong>${escapeHtml(profile.display_name)}</strong><small id="name-change-note">${escapeHtml(nameChange.message)}</small></div>`
+    : `<form id="profile-form" class="stack profile-form"><label>Display name<input name="displayName" value="${escapeHtml(profile.display_name)}" maxlength="24" required aria-describedby="name-change-note"></label><p class="profile-cooldown" id="name-change-note">${escapeHtml(nameChange.message)}</p>${formError()}<button class="button button--primary" type="submit">Save name</button></form>`;
+  return `${pageHeader('Profile')}<section class="profile-grid"><article class="simple-panel profile-summary"><span class="avatar avatar--large">${initials(profile.display_name)}</span><h2>${escapeHtml(profile.display_name)}</h2><p>${profile.is_admin ? 'Admin' : 'User'}</p><small>@${escapeHtml(profile.login_name || '')}</small><a class="button button--ghost button--small" href="#/player/${profile.id}">View performance</a></article><article class="simple-panel profile-settings"><div class="stack">${nameControl}<div class="profile-account-info"><span>Email</span><strong>${escapeHtml(profile.email || 'No email')}</strong><small>Email is used for login and cannot be changed here.</small></div><button class="button button--secondary" type="button" data-open="change-password">Change password</button></div></article></section>`;
 }
 
 function auditDetailText(log) {
@@ -484,7 +550,7 @@ export function adminView(users = [], logs = [], reports = [], activeAdminId = '
   const pendingUsers = users.filter(user => user.account_status === 'pending' && !user.is_admin).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   const registeredUsers = users.filter(user => user.account_status !== 'pending');
   return `
-    ${pageHeader('', 'Admin', 'Approve accounts, review reports and manage app data.')}
+    ${pageHeader('Admin', 'Approve accounts, review reports and manage app data.')}
     <section class="section-block" id="account-requests">
       <div class="section-heading"><h2>Account requests</h2><span>${pendingUsers.length}</span></div>
       <div class="request-list">${pendingUsers.length ? pendingUsers.map(user => `<article class="request-card system-window"><div class="request-card__header"><div><h3>${escapeHtml(user.display_name)}</h3><p>@${escapeHtml(user.login_name)} · ${escapeHtml(user.email || 'No email')} · ${formatRelative(user.created_at)}</p></div><span class="status status--pending">Waiting</span></div><div class="request-actions"><button class="button button--danger" data-admin-registration-reject="${user.id}">Reject</button><button class="button button--primary" data-admin-registration-approve="${user.id}">Approve</button></div></article>`).join('') : '<p class="empty-copy">No accounts waiting.</p>'}</div>
@@ -495,15 +561,15 @@ export function adminView(users = [], logs = [], reports = [], activeAdminId = '
     </section>
     <section class="section-block">
       <div class="section-heading"><h2>Registered users</h2><span>${registeredUsers.length}</span></div>
-      <div class="user-list">${registeredUsers.map(user => `<article class="user-row"><span class="avatar">${initials(user.display_name)}</span><div><strong>${escapeHtml(user.display_name)}</strong><small>@${escapeHtml(user.login_name || '')} · ${escapeHtml(user.email || 'No email')} · ${accountStatusLabel(user.account_status)}${user.must_change_password ? ' · Temporary password' : ''}</small></div><div class="user-row__actions">${adminUserActions(user, activeAdminId)}</div></article>`).join('')}</div>
+      <div class="user-list">${registeredUsers.map(user => `<article class="user-row"><a class="player-mini-profile" href="#/player/${user.id}"><span class="avatar">${initials(user.display_name)}</span><span><strong>${escapeHtml(user.display_name)}</strong><small>@${escapeHtml(user.login_name || '')} · ${escapeHtml(user.email || 'No email')} · ${accountStatusLabel(user.account_status)}${user.must_change_password ? ' · Temporary password' : ''}</small></span></a><div class="user-row__actions">${adminUserActions(user, activeAdminId)}</div></article>`).join('')}</div>
     </section>
     <section class="section-block">
       <div class="section-heading"><h2>Data</h2><span>Admin only</span></div>
       <div class="card-grid admin-data-grid">
         <article class="simple-panel admin-data-card"><div><h3>Clear activity</h3><p>Delete tables, money records, requests, notifications, reports and audit logs. Registered users stay.</p></div><button class="button button--danger" data-admin-clear-activity>Clear activity</button></article>
-        <article class="simple-panel admin-data-card"><div><h3>Hard reset</h3><p>Delete every registered user and all activity. The app returns to first-time administrator setup.</p></div><button class="button button--danger" data-admin-hard-reset>Hard reset everything</button></article>
       </div>
     </section>
+    <details class="danger-zone"><summary>Danger zone</summary><div class="danger-zone__body"><div><h3>Hard reset Pokerat</h3><p>Delete every registered user and all activity. The app returns to first-time administrator setup.</p></div><button class="button button--danger" data-open="hard-reset">Hard reset everything</button></div></details>
     <details class="simple-details"><summary>Audit log</summary><div class="details-body activity-list">${logs.length ? logs.map(log => `<article class="activity-item"><span class="activity-icon">↺</span><div class="activity-copy"><strong>${escapeHtml(log.action.replaceAll('_', ' '))}</strong><small>${escapeHtml(log.actor?.display_name || 'System')} · ${formatDateTime(log.created_at)}</small>${auditDetailText(log) ? `<em>${escapeHtml(auditDetailText(log))}</em>` : ''}</div></article>`).join('') : '<p class="empty-copy">No audit records.</p>'}</div></details>`;
 }
 
@@ -547,6 +613,18 @@ export function modalTemplate(type, context = {}) {
       title: 'Fix money record',
       body: `<form id="correct-transaction-form" class="stack"><input type="hidden" name="transactionId" value="${escapeHtml(context.transactionId || '')}"><label>Correct amount <span class="optional">leave blank to remove</span><input name="correctedAmount" type="number" min="0.01" step="0.01" value="${escapeHtml(context.amount || '')}"></label><label>Why?<textarea name="reason" required maxlength="240"></textarea></label>${formError()}<button class="button button--danger" type="submit">Save fix</button></form>`
     },
+    'review-report': {
+      title: context.status === 'reviewing' ? 'Mark report as reviewing' : context.status === 'dismissed' ? 'Dismiss report' : 'Resolve report',
+      body: `<form id="review-report-form" class="stack"><input type="hidden" name="reportId" value="${escapeHtml(context.reportId || '')}"><input type="hidden" name="status" value="${escapeHtml(context.status || '')}"><div class="simple-notice"><strong>${escapeHtml(context.sessionName || 'Reported table')}</strong><span>Reported by ${escapeHtml(context.reporterName || 'Player')}</span></div><label>${context.status === 'reviewing' ? 'Review note <span class="optional">optional</span>' : 'Resolution note'}<textarea name="note" maxlength="500" ${context.status === 'reviewing' ? '' : 'required'} placeholder="Explain the action taken"></textarea></label>${formError()}<button class="button ${context.status === 'dismissed' ? 'button--danger' : 'button--primary'}" type="submit">Save report status</button></form>`
+    },
+    'admin-account-status': {
+      title: context.status === 'suspended' ? `Suspend ${escapeHtml(context.userName || 'account')}` : `Restore ${escapeHtml(context.userName || 'account')}`,
+      body: `<form id="admin-account-status-form" class="stack"><input type="hidden" name="userId" value="${escapeHtml(context.userId || '')}"><input type="hidden" name="status" value="${escapeHtml(context.status || '')}">${context.status === 'suspended' ? '<p class="muted">This player will be unable to log in until restored.</p><label>Reason<textarea name="reason" maxlength="300" required placeholder="Explain why the account is being suspended"></textarea></label>' : '<div class="simple-notice success"><strong>Restore account access?</strong><span>The player will be able to log in again.</span></div>'}${formError()}<button class="button ${context.status === 'suspended' ? 'button--danger' : 'button--primary'}" type="submit">${context.status === 'suspended' ? 'Suspend account' : 'Restore account'}</button></form>`
+    },
+    'hard-reset': {
+      title: 'Hard reset Pokerat',
+      body: `<form id="hard-reset-form" class="stack"><div class="simple-notice warning"><strong>This deletes everything.</strong><span>All accounts, tables and activity will be permanently removed.</span></div><label>Type RESET POKERAT to continue<input name="confirmation" autocomplete="off" required placeholder="RESET POKERAT"></label>${formError()}<button class="button button--danger" type="submit">Delete everything</button></form>`
+    },
     notifications: { title: 'Notifications', body: notificationList(context.notifications || []) }
   };
 
@@ -572,9 +650,18 @@ function closedSummary(session, transactions) {
   return `<section class="simple-panel"><div class="section-heading"><h2>Final result</h2><span class="status status--closed">Finished</span></div><div class="final-money"><div><span>Expected</span><strong>${formatCurrency(session.expected_funds)}</strong></div><div><span>Counted</span><strong>${formatCurrency(session.counted_funds)}</strong></div><div><span>Difference</span><strong class="${Number(session.discrepancy) === 0 ? 'positive' : 'negative'}">${formatCurrency(session.discrepancy, { signed: true })}</strong></div></div><div class="ranking-list">${ranking.map((row, index) => `<div><span>${index + 1}. ${escapeHtml(row.name)}</span><strong class="${row.net >= 0 ? 'positive' : 'negative'}">${formatCurrency(row.net, { signed: true })}</strong></div>`).join('') || '<p class="empty-copy">No results.</p>'}</div></section>`;
 }
 
+function notificationItem(item) {
+  const unread = !item.read_at;
+  const actionLabel = item.delivery === 'final_result' ? 'View result' : item.action_hash ? 'Open table' : unread ? 'Mark read' : '';
+  const action = actionLabel ? `<button class="button button--ghost button--small" type="button" data-open-notification="${item.id}">${actionLabel}</button>` : '';
+  return `<article class="activity-item notification-list-item ${unread ? 'is-unread' : 'is-read'}"><span class="activity-icon">${unread ? '!' : '✓'}</span><div class="activity-copy"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.message)} · ${formatRelative(item.created_at)}</small></div>${action}</article>`;
+}
+
 function notificationList(notifications) {
-  if (!notifications.length) return '<p class="empty-copy">No new notifications.</p>';
-  return `<div class="activity-list">${notifications.map(item => `<article class="activity-item"><span class="activity-icon">!</span><div class="activity-copy"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.message)} · ${formatRelative(item.created_at)}</small></div></article>`).join('')}</div><button class="button button--secondary" data-mark-notifications-read>Clear all</button>`;
+  if (!notifications.length) return '<p class="empty-copy">No notifications yet.</p>';
+  const unread = notifications.filter(item => !item.read_at);
+  const recent = notifications.filter(item => item.read_at).slice(0, 12);
+  return `<div class="notification-sections">${unread.length ? `<section><div class="notification-section-heading"><h3>Unread</h3><span>${unread.length}</span></div><div class="activity-list">${unread.map(notificationItem).join('')}</div></section>` : '<div class="simple-notice success"><strong>You’re all caught up.</strong><span>No unread notifications.</span></div>'}${recent.length ? `<section><div class="notification-section-heading"><h3>Recent</h3><span>${recent.length}</span></div><div class="activity-list">${recent.map(notificationItem).join('')}</div></section>` : ''}</div>${unread.length ? '<button class="button button--secondary" data-mark-notifications-read>Mark all as read</button>' : ''}`;
 }
 
 export function suspendedView(profile) {
