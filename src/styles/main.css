@@ -4409,3 +4409,228 @@ body:has(dialog[open]) {
     display: none;
   }
 }
+
+/* Compact collapsible History cards */
+.history-card {
+  min-height: 0;
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  border-color: rgba(88, 155, 255, 0.24);
+}
+
+.history-card > summary {
+  list-style: none;
+}
+
+.history-card > summary::-webkit-details-marker {
+  display: none;
+}
+
+.history-card__summary {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "top top chevron"
+    "copy result chevron";
+  align-items: center;
+  gap: 0.72rem 1rem;
+  min-height: 124px;
+  padding: 1rem 1.1rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.history-card__summary:hover {
+  background: linear-gradient(90deg, rgba(20, 70, 154, 0.18), rgba(19, 33, 66, 0.08));
+}
+
+.history-card__summary:focus-visible {
+  outline: 3px solid rgba(83, 201, 255, 0.28);
+  outline-offset: -3px;
+}
+
+.history-card__summary-top {
+  grid-area: top;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.history-card__summary-copy {
+  grid-area: copy;
+  min-width: 0;
+}
+
+.history-card__summary-copy h3 {
+  margin: 0 0 0.28rem;
+  overflow-wrap: anywhere;
+}
+
+.history-card__summary-copy p {
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.history-card__compact-result {
+  grid-area: result;
+  min-width: 116px;
+  display: grid;
+  justify-items: end;
+  gap: 0.2rem;
+  text-align: right;
+}
+
+.history-card__compact-result span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.history-card__compact-result strong {
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.history-card__chevron {
+  grid-area: chevron;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(92, 149, 255, 0.2);
+  color: var(--blue);
+  background: rgba(11, 20, 39, 0.8);
+  font-size: 1.25rem;
+  line-height: 1;
+  transition: transform 0.25s ease, border-color 0.25s ease, background 0.25s ease;
+}
+
+.history-card[open] .history-card__chevron {
+  transform: rotate(180deg);
+  border-color: var(--line-strong);
+  background: rgba(37, 91, 188, 0.24);
+}
+
+.history-card__body {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 0.85rem;
+  padding: 0 1.1rem 1.1rem;
+  border-top: 1px solid rgba(91, 144, 255, 0.12);
+}
+
+.history-card__details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  padding-top: 0.9rem;
+}
+
+.history-card__details-grid .session-card__timer,
+.history-card__details-grid .history-result-preview {
+  min-width: 0;
+  margin: 0;
+}
+
+.history-card__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.history-card__actions .button {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  margin: 0;
+  padding-inline: 0.9rem;
+  overflow: visible;
+  white-space: normal;
+  text-align: center;
+}
+
+.history-card__actions .history-delete-button {
+  display: inline-flex;
+  color: #fff;
+  background: linear-gradient(135deg, rgba(128, 20, 53, 0.96), rgba(210, 47, 92, 0.9));
+  border-color: rgba(255, 109, 147, 0.65);
+  box-shadow: 0 0 18px rgba(255, 74, 128, 0.12);
+}
+
+.history-card:not([open]) {
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(102, 201, 255, 0.06);
+}
+
+.history-card[open] {
+  border-color: rgba(101, 199, 255, 0.38);
+  box-shadow: 0 20px 46px rgba(0, 0, 0, 0.34), 0 0 22px rgba(65, 130, 255, 0.12);
+}
+
+@media (max-width: 620px) {
+  .page-container--history .card-grid {
+    gap: 0.75rem;
+  }
+
+  .history-card__summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "top chevron"
+      "copy chevron"
+      "result result";
+    min-height: 0;
+    gap: 0.58rem 0.7rem;
+    padding: 0.9rem;
+  }
+
+  .history-card__summary-top {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .history-card__summary-top .code {
+    margin-left: auto;
+  }
+
+  .history-card__compact-result {
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    justify-items: stretch;
+    padding: 0.65rem 0.72rem;
+    border: 1px solid rgba(92, 149, 255, 0.14);
+    background: rgba(255, 255, 255, 0.018);
+    text-align: left;
+  }
+
+  .history-card__compact-result strong {
+    justify-self: end;
+  }
+
+  .history-card__body {
+    padding: 0 0.9rem 0.9rem;
+  }
+
+  .history-card__details-grid,
+  .history-card__actions {
+    grid-template-columns: 1fr;
+  }
+
+  .history-card__details-grid {
+    padding-top: 0.75rem;
+  }
+
+  .history-card__actions .button {
+    min-height: 48px;
+  }
+}

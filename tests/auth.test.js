@@ -155,7 +155,12 @@ test('admin history deletion and compact audit views render', async () => {
   const table = { id: 's1', name: 'Finished Table', status: 'closed', session_code: 'PKR-ABCD', host_user_id: 'admin', host: admin, session_members: [], duration_seconds: 900, created_at: '2026-07-01T10:00:00Z' };
 
   const adminHistory = historyView({ sessions: [table], profileId: 'admin', results: [], filter: 'all', isAdmin: true });
+  assert.match(adminHistory, /<details class="history-card system-window">/);
+  assert.match(adminHistory, /class="history-card__summary"/);
+  assert.match(adminHistory, /class="history-card__actions"/);
   assert.match(adminHistory, /data-delete-history-table="s1"/);
+  assert.match(adminHistory, />Delete table<\/button>/);
+  assert.match(adminHistory, /href="#\/session\/s1">Open table<\/a>/);
   const playerHistory = historyView({ sessions: [table], profileId: 'player', results: [], filter: 'all', isAdmin: false });
   assert.doesNotMatch(playerHistory, /data-delete-history-table/);
 

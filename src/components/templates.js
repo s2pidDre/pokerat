@@ -528,15 +528,33 @@ export function playerProfileView({ player, performance, isCurrentUser = false, 
 
 function historyCard(session, profileId, result = null, isAdmin = false) {
   const own = session.host_user_id === profileId;
+  const resultValue = session.status === 'closed' && result ? Number(result.net) : null;
+  const resultClass = resultValue > 0 ? 'positive' : resultValue < 0 ? 'negative' : '';
+  const compactResult = resultValue !== null
+    ? `<div class="history-card__compact-result"><span>Your result</span><strong class="${resultClass}">${formatCurrency(resultValue, { signed: true })}</strong></div>`
+    : session.status === 'cancelled'
+      ? '<div class="history-card__compact-result"><span>Result</span><strong>Cancelled</strong></div>'
+      : '';
   const resultPreview = session.status === 'closed' && result
-    ? `<div class="history-result-preview"><span>Your result</span><strong class="${Number(result.net) > 0 ? 'positive' : Number(result.net) < 0 ? 'negative' : ''}">${formatCurrency(result.net, { signed: true })}</strong><small>${session.duration_seconds ? formatDurationSeconds(session.duration_seconds) : 'Duration unavailable'}</small></div>`
+    ? `<div class="history-result-preview"><span>Your result</span><strong class="${resultClass}">${formatCurrency(resultValue, { signed: true })}</strong><small>${session.duration_seconds ? formatDurationSeconds(session.duration_seconds) : 'Duration unavailable'}</small></div>`
     : session.status === 'cancelled'
       ? '<div class="history-result-preview is-cancelled"><span>Cancelled</span><small>No performance result recorded.</small></div>'
       : '';
   const deleteAction = isAdmin
-    ? `<button class="button button--danger button--small history-delete-button" type="button" data-delete-history-table="${session.id}" aria-label="Delete ${escapeHtml(session.name)} permanently">Delete table</button>`
+    ? `<button class="button button--danger history-delete-button" type="button" data-delete-history-table="${session.id}" aria-label="Delete ${escapeHtml(session.name)} permanently">Delete table</button>`
     : '';
-  return `<article class="session-card history-card system-window"><a class="history-card__link" href="#/session/${session.id}"><div class="session-card__top"><span class="status status--${session.status}">${statusLabel(session.status)}</span><span class="code">${escapeHtml(session.session_code)}</span></div><h3>${escapeHtml(session.name)}</h3><p>${own ? 'Created by you' : `Created by ${escapeHtml(session.host?.display_name || 'User')}`}</p>${sessionTimerMarkup(session, true)}${resultPreview}<span class="open-label">Open table →</span></a>${deleteAction}</article>`;
+  return `<details class="history-card system-window">
+    <summary class="history-card__summary">
+      <div class="history-card__summary-top"><span class="status status--${session.status}">${statusLabel(session.status)}</span><span class="code">${escapeHtml(session.session_code)}</span></div>
+      <div class="history-card__summary-copy"><h3>${escapeHtml(session.name)}</h3><p>${own ? 'Created by you' : `Created by ${escapeHtml(session.host?.display_name || 'User')}`}</p></div>
+      ${compactResult}
+      <span class="history-card__chevron" aria-hidden="true">⌄</span>
+    </summary>
+    <div class="history-card__body">
+      <div class="history-card__details-grid">${sessionTimerMarkup(session, true)}${resultPreview}</div>
+      <div class="history-card__actions"><a class="button button--secondary" href="#/session/${session.id}">Open table</a>${deleteAction}</div>
+    </div>
+  </details>`;
 }
 
 export function historyView({ sessions, profileId, results = [], filter = 'all', isAdmin = false }) {
