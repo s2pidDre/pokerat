@@ -134,6 +134,30 @@ export function buildPlayerPerformance({ userId, sessions = [], sessionResults =
     };
   });
 
+  let bestResultCents = 0;
+  let biggestLossCents = 0;
+  let longestWinStreak = 0;
+  let runningWinStreak = 0;
+  let currentStreakOutcome = '';
+  let currentStreakCount = 0;
+
+  for (const point of points) {
+    const netCents = toCents(point.net);
+    bestResultCents = Math.max(bestResultCents, netCents);
+    biggestLossCents = Math.min(biggestLossCents, netCents);
+    if (point.outcome === 'win') {
+      runningWinStreak += 1;
+      longestWinStreak = Math.max(longestWinStreak, runningWinStreak);
+    } else {
+      runningWinStreak = 0;
+    }
+    if (point.outcome === currentStreakOutcome) currentStreakCount += 1;
+    else {
+      currentStreakOutcome = point.outcome;
+      currentStreakCount = 1;
+    }
+  }
+
   return {
     tableCount: points.length,
     wins,
@@ -143,6 +167,10 @@ export function buildPlayerPerformance({ userId, sessions = [], sessionResults =
     cashIn: fromCents(cashInCents),
     cashOut: fromCents(cashOutCents),
     net: fromCents(cumulativeCents),
+    bestResult: fromCents(bestResultCents),
+    biggestLoss: fromCents(biggestLossCents),
+    currentStreak: points.length ? { outcome: currentStreakOutcome, count: currentStreakCount } : { outcome: '', count: 0 },
+    longestWinStreak,
     points
   };
 }

@@ -99,20 +99,41 @@ Deno.serve(async request => {
       return json({ ok: true });
     }
 
-    if (action === 'hard_reset') {
+    if (action === 'clear_activity') {
       const { error: clearError } = await admin.rpc('admin_clear_activity');
       if (clearError) throw clearError;
+      return json({ ok: true });
+    }
+
+    if (action === 'hard_reset') {
+      const confirmation = String(payload.confirmation || '');
+      if (confirmation !== 'RESET POKERAT') {
+        return json({ ok: false, error: 'Type RESET POKERAT exactly to continue.' }, 400);
+      }
+
+      const { error: clearError } = await admin.rpc('admin_clear_activity');
+      if (clearError) throw clearError;
+
+      const allUsers: Array<{ id: string }> = [];
+      let page = 1;
       while (true) {
-        const { data, error } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+        const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
         if (error) throw error;
         const users = data.users || [];
-        if (!users.length) break;
-        for (const user of users) {
-          const { error: deleteError } = await admin.auth.admin.deleteUser(user.id);
-          if (deleteError) throw deleteError;
-        }
+        allUsers.push(...users.map(user => ({ id: user.id })));
+        if (users.length < 1000) break;
+        page += 1;
       }
-      return json({ ok: true });
+
+      const deletionOrder = [
+        ...allUsers.filter(user => user.id !== caller.id),
+        ...allUsers.filter(user => user.id === caller.id)
+      ];
+      for (const user of deletionOrder) {
+        const { error: deleteError } = await admin.auth.admin.deleteUser(user.id);
+        if (deleteError && !/not found/i.test(deleteError.message || '')) throw deleteError;
+      }
+      return json({ ok: true, deletedUsers: deletionOrder.length });
     }
 
     return json({ ok: false, error: 'Unknown admin action.' }, 400);

@@ -4,12 +4,12 @@ import { closeAdminRegistrationApprovalDialog, closeHostMoneyApprovalDialog, con
 import { loadAppData, resetAppData, saveAppData } from './lib/app-data.js';
 import {
   adminView,
-  auditLogView,
   appShell,
   forcePasswordChangeView,
   historyView,
   initialAdminSetupView,
   leaderboardView,
+  loadingSkeletonView,
   homeView,
   modalTemplate,
   notificationList,
@@ -25,7 +25,7 @@ import { buildClosedTableLeaderboard, buildPlayerPerformance } from './utils/lea
 import { validAmount } from './utils/validation.js';
 import { clearLoginAttempts, getLoginLock, normalizeLoginIdentifier, recordFailedLogin, validateDisplayName, validatePassword } from './utils/auth.js';
 import { changeOwnPassword, completeForcedPasswordChange, createFirstAdministrator, getCurrentProfile, getSession, getVisibleProfiles, hasActiveAdministrator, loginAccount, logoutAccount, onAuthStateChange, registerAccount, runAdminAccountAction, subscribeToProfiles, unsubscribeFromProfiles, updateOwnProfile } from './lib/account-service.js';
-import { cancelMoneyRequest, cancelPokerTable, clearRemoteActivity, closePokerTable, correctPokerTransaction, createPokerTable, deletePokerTable, joinPokerTable, loadPokeratActivity, markAllNotificationsRead, markNotificationRead, recordHostMoney, removeTableMember, reviewMoneyRequest, reviewSessionReport, startPokerTable, submitMoneyRequest, submitSessionReport, subscribeToPokeratActivity, transferTableHost, unsubscribeFromPokeratActivity } from './lib/table-service.js';
+import { cancelMoneyRequest, cancelPokerTable, closePokerTable, correctPokerTransaction, createPokerTable, deletePokerTable, joinPokerTable, loadPokeratActivity, markAllNotificationsRead, markNotificationRead, recordHostMoney, removeTableMember, reviewMoneyRequest, startPokerTable, submitMoneyRequest, subscribeToPokeratActivity, transferTableHost, unsubscribeFromPokeratActivity } from './lib/table-service.js';
 
 const app = document.getElementById('app');
 let renderQueued = false;
@@ -33,6 +33,7 @@ let sessionTimerInterval = null;
 const surfacedNotificationIds = new Set();
 let activityRefreshTimer = null;
 let activityRefreshPromise = null;
+let showHostMoneyQueueAfterRealtimeRefresh = false;
 let notificationBaselineReady = false;
 const pendingNotificationPopups = new Map();
 let notificationPopupTimer = null;
@@ -42,12 +43,6 @@ const performanceRanges = new Map();
 let historyFilter = 'all';
 let adminUserSearch = '';
 let adminUserFilter = 'all';
-let auditSearch = '';
-let auditCategoryFilter = 'all';
-let auditDateRange = '30';
-let auditDateFrom = '';
-let auditDateTo = '';
-let auditVisibleCount = 25;
 let focusPendingAdminRequests = false;
 const realtimeRegistrationQueue = [];
 const realtimeRegistrationQueuedIds = new Set();
@@ -158,8 +153,6 @@ function persistState() {
     transactions: [],
     requests: { join: [], buyin: [], cashout: [] },
     notifications: [],
-    reports: [],
-    auditLogs: [],
     sessionResults: []
   });
 }
@@ -282,93 +275,6 @@ function notificationsForUser(userId, limit = 20) {
 function unreadNotifications(userId) {
   return notificationsForUser(userId, Number.MAX_SAFE_INTEGER)
     .filter(notification => !notification.read_at);
-}
-
-function adminLogs() {
-  return getState().auditLogs
-    .map(log => ({
-      ...log,
-      actor: userById(log.actor_id),
-      targetUser: userById(log.details?.user_id || log.details?.player_id || log.target_id),
-      session: enrichSession(sessionById(log.session_id))
-    }))
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-}
-
-function auditCategoryFor(log) {
-  const action = String(log.action || '').toLowerCase();
-  if (action.includes('report')) return 'reports';
-  if (/(money|transaction|buy_in|cash_out|cashin|cashout|request_(approved|rejected|cancelled|submitted))/.test(action)) return 'money';
-  if (/(session|table|host|player_joined|player_removed)/.test(action)) return 'tables';
-  if (/(account|user|profile|password|registration)/.test(action)) return 'accounts';
-  return 'administration';
-}
-
-function auditDateBounds(range, from = '', to = '') {
-  const now = new Date();
-  if (range === 'all') return { start: null, end: null };
-  if (range === 'custom') {
-    const start = from ? new Date(`${from}T00:00:00`) : null;
-    const end = to ? new Date(`${to}T23:59:59.999`) : null;
-    return {
-      start: start && Number.isFinite(start.getTime()) ? start : null,
-      end: end && Number.isFinite(end.getTime()) ? end : null
-    };
-  }
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  if (range !== 'today') start.setDate(start.getDate() - Math.max(0, Number(range) - 1));
-  return { start, end: null };
-}
-
-function filteredAuditLogs() {
-  const search = auditSearch.trim().toLowerCase();
-  const { start, end } = auditDateBounds(auditDateRange, auditDateFrom, auditDateTo);
-  return adminLogs().filter(log => {
-    if (auditCategoryFilter !== 'all' && auditCategoryFor(log) !== auditCategoryFilter) return false;
-    const created = new Date(log.created_at);
-    if (start && created < start) return false;
-    if (end && created > end) return false;
-    if (!search) return true;
-    const haystack = [
-      log.action,
-      log.actor?.display_name,
-      log.targetUser?.display_name,
-      log.session?.name,
-      log.session?.session_code,
-      log.details?.table_name,
-      log.details?.table_code,
-      JSON.stringify(log.details || {})
-    ].filter(Boolean).join(' ').toLowerCase();
-    return haystack.includes(search);
-  });
-}
-
-function csvCell(value) {
-  return `"${String(value ?? '').replaceAll('"', '""')}"`;
-}
-
-function exportAuditCsv() {
-  const logs = filteredAuditLogs();
-  const rows = [['Date', 'Action', 'Category', 'Actor', 'Table', 'Table Code', 'Details']];
-  logs.forEach(log => rows.push([
-    new Date(log.created_at).toISOString(),
-    log.action,
-    auditCategoryFor(log),
-    log.actor?.display_name || 'System',
-    log.session?.name || log.details?.table_name || '',
-    log.session?.session_code || log.details?.table_code || '',
-    JSON.stringify(log.details || {})
-  ]));
-  const blob = new Blob([rows.map(row => row.map(csvCell).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `pokerat-audit-${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
 }
 
 function clearRealtimeRegistrationQueue() {
@@ -557,6 +463,9 @@ async function signOut(message = '') {
   closeHostMoneyApprovalDialog();
   resetNotificationBaseline();
   clearRealtimeRegistrationQueue();
+  if (activityRefreshTimer) window.clearTimeout(activityRefreshTimer);
+  activityRefreshTimer = null;
+  showHostMoneyQueueAfterRealtimeRefresh = false;
   sessionStorage.removeItem(ADMIN_PENDING_ROUTE_KEY);
   realtimeConnectionStatus = 'connected';
   if (realtimeDisconnectTimer) window.clearTimeout(realtimeDisconnectTimer);
@@ -659,17 +568,30 @@ async function refreshRemoteActivity({ quiet = false, seedNotifications = false 
   return activityRefreshPromise;
 }
 
-function queueActivityRefresh(delay = 80) {
+function queueActivityRefresh(delay = 80, { showHostMoneyQueue = false } = {}) {
+  if (showHostMoneyQueue) showHostMoneyQueueAfterRealtimeRefresh = true;
   if (activityRefreshTimer) window.clearTimeout(activityRefreshTimer);
-  activityRefreshTimer = window.setTimeout(() => {
+  activityRefreshTimer = window.setTimeout(async () => {
     activityRefreshTimer = null;
-    refreshRemoteActivity({ quiet: true }).catch(error => console.error('Realtime activity refresh failed:', error));
+    const shouldShowHostMoneyQueue = showHostMoneyQueueAfterRealtimeRefresh;
+    showHostMoneyQueueAfterRealtimeRefresh = false;
+    try {
+      await refreshRemoteActivity({ quiet: true });
+      if (shouldShowHostMoneyQueue) {
+        requestAnimationFrame(() => syncHostMoneyApprovalQueue(currentUser()));
+      }
+    } catch (error) {
+      console.error('Realtime activity refresh failed:', error);
+    }
   }, delay);
 }
 
 function startActivityRealtime() {
   subscribeToPokeratActivity(
-    () => queueActivityRefresh(),
+    ({ table, payload } = {}) => {
+      const newMoneyRequest = table === 'money_requests' && payload?.eventType === 'INSERT';
+      queueActivityRefresh(80, { showHostMoneyQueue: newMoneyRequest });
+    },
     (status, error) => {
       if (status === 'SUBSCRIBED') {
         setRealtimeConnectionStatus('connected');
@@ -694,7 +616,7 @@ function render() {
   stopSessionTimerUpdates();
   const state = getState();
   if (state.loading) {
-    app.innerHTML = '<main class="loading-screen"><div class="system-loader"><span></span><span></span><span></span></div><p>Loading Pokerat…</p></main>';
+    app.innerHTML = loadingSkeletonView();
     return;
   }
 
@@ -737,6 +659,10 @@ function render() {
   const sessions = visibleSessionsForUser(user.id);
   const requests = requestsForUser(user.id);
   const legacyHomeRoute = ['sessions', 'requests'].includes(route.page);
+  if (route.page === 'audit') {
+    history.replaceState(null, '', '#/admin');
+    route.page = 'admin';
+  }
   if (legacyHomeRoute && location.hash !== '#/home') history.replaceState(null, '', '#/home');
   const effectiveRoute = legacyHomeRoute ? { page: 'home', id: '' } : route;
   let content;
@@ -793,29 +719,9 @@ function render() {
     }
     case 'admin':
       content = user.is_admin
-        ? adminView(state.users, adminLogs(), state.reports, user.id, { search: adminUserSearch, filter: adminUserFilter })
+        ? adminView(state.users, user.id, { search: adminUserSearch, filter: adminUserFilter })
         : '<section class="simple-panel"><h1>Admin only</h1><p>This account does not have administrator access.</p></section>';
       break;
-    case 'audit': {
-      if (!user.is_admin) {
-        content = '<section class="simple-panel"><h1>Admin only</h1><p>This account does not have administrator access.</p></section>';
-        break;
-      }
-      const logs = filteredAuditLogs();
-      content = auditLogView({
-        logs,
-        totalCount: logs.length,
-        controls: {
-          search: auditSearch,
-          category: auditCategoryFilter,
-          range: auditDateRange,
-          from: auditDateFrom,
-          to: auditDateTo,
-          visibleCount: auditVisibleCount
-        }
-      });
-      break;
-    }
     case 'session': {
       const session = enrichSession(sessionById(effectiveRoute.id));
       content = session && (user.is_admin || isMember(session.id, user.id))
@@ -858,7 +764,8 @@ function render() {
 }
 
 async function bootstrap() {
-  document.documentElement.dataset.theme = localStorage.getItem('pokerat-theme') || 'dark';
+  document.documentElement.dataset.theme = 'dark';
+  localStorage.removeItem('pokerat-theme');
   const data = loadAppData();
   seedNotificationBaseline(data.notifications);
   setState({ ...data, loading: true });
@@ -893,8 +800,6 @@ async function bootstrap() {
       data.transactions = [];
       data.requests = { join: [], buyin: [], cashout: [] };
       data.notifications = [];
-      data.reports = [];
-      data.auditLogs = [];
       data.sessionResults = [];
     }
     setState({ ...data, loading: false });
@@ -939,7 +844,7 @@ async function bootstrap() {
         currentUserId: null,
         sessions: [], members: [], transactions: [],
         requests: { join: [], buyin: [], cashout: [] },
-        notifications: [], reports: [], auditLogs: [], sessionResults: []
+        notifications: [], sessionResults: []
       });
       persistState();
       queueRender();
@@ -1068,77 +973,29 @@ function bindEvents() {
       return;
     }
 
-    const auditCategoryButton = event.target.closest('[data-audit-category]');
-    if (auditCategoryButton) {
-      auditCategoryFilter = auditCategoryButton.dataset.auditCategory;
-      auditVisibleCount = 25;
-      queueRender();
-      return;
-    }
-
-    const auditRangeButton = event.target.closest('[data-audit-range]');
-    if (auditRangeButton) {
-      auditDateRange = auditRangeButton.dataset.auditRange;
-      auditVisibleCount = 25;
-      queueRender();
-      return;
-    }
-
-    if (event.target.closest('[data-audit-load-more]')) {
-      auditVisibleCount += 25;
-      queueRender();
-      return;
-    }
-
-    if (event.target.closest('[data-export-audit]')) {
-      exportAuditCsv();
-      showToast('Audit CSV downloaded.');
-      return;
-    }
-
-    const historyDelete = event.target.closest('[data-delete-history-table]');
-    if (historyDelete) {
+    const memberMenuTrigger = event.target.closest('[data-member-menu-trigger]');
+    if (memberMenuTrigger) {
       event.preventDefault();
-      event.stopPropagation();
-      const admin = currentUser();
-      if (!admin?.is_admin) throw new Error('Admin only.');
-      const session = sessionById(historyDelete.dataset.deleteHistoryTable);
-      if (!session || !['closed', 'cancelled'].includes(session.status)) throw new Error('Only finished or cancelled tables can be deleted.');
-      openModal('delete-history-table', {
-        tableId: session.id,
-        tableName: session.name,
-        tableCode: session.session_code
-      });
+      toggleMemberMenu(memberMenuTrigger);
       return;
     }
 
-    const reviewLater = event.target.closest('[data-admin-registration-review-later]');
-    if (reviewLater) {
-      finishRealtimeRegistrationRequest(reviewLater.dataset.adminRegistrationReviewLater);
-      showToast('Request left in Admin for later review.');
-      return;
-    }
-
-    const menuTrigger = event.target.closest('[data-member-menu-trigger]');
-    if (menuTrigger) {
+    const adminMenuTrigger = event.target.closest('[data-admin-user-menu-trigger]');
+    if (adminMenuTrigger) {
       event.preventDefault();
-      toggleMemberMenu(menuTrigger);
+      toggleAdminUserMenu(adminMenuTrigger);
       return;
     }
 
     if (!event.target.closest('[data-member-menu]')) closeMemberMenus();
-
-    if (event.target.closest('[data-logout]')) {
-      signOut('Logged out.');
-      return;
-    }
+    if (!event.target.closest('.admin-user-menu-popover')) closeAdminUserMenus();
 
     if (event.target.closest('[data-admin-clear-activity]')) {
       const user = currentUser();
       if (!user?.is_admin) throw new Error('Admin only.');
       const accepted = await confirmDialog({
         title: 'Clear all activity?',
-        message: 'Tables, money records, requests, notifications, reports and audit logs will be deleted. Registered users will stay.',
+        message: 'Tables, money records, requests and notifications will be deleted. Registered users will stay.',
         confirmText: 'Clear activity',
         destructive: true
       });
@@ -1147,7 +1004,7 @@ function bindEvents() {
       closeActiveModal();
       closeHostMoneyApprovalDialog();
       surfacedNotificationIds.clear();
-      await clearRemoteActivity();
+      await runAdminAccountAction('clear_activity');
       await refreshRemoteActivity({ quiet: true });
       navigate('admin');
       showToast('All activity cleared. Registered users were kept.');
@@ -1165,13 +1022,6 @@ function bindEvents() {
         setRealtimeConnectionStatus('disconnected');
         showToast(error.message || 'Could not reconnect.', 'error', 5000);
       }
-      return;
-    }
-
-    if (event.target.closest('#theme-toggle')) {
-      const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-      document.documentElement.dataset.theme = next;
-      localStorage.setItem('pokerat-theme', next);
       return;
     }
 
@@ -1261,28 +1111,6 @@ function bindEvents() {
   document.addEventListener('submit', handleSubmit);
   document.addEventListener('input', event => {
     if (event.target.matches('[data-admin-user-search]')) applyAdminUserFilters();
-    if (event.target.matches('[data-audit-search]')) {
-      auditSearch = event.target.value;
-      auditVisibleCount = 25;
-      queueRender();
-      requestAnimationFrame(() => {
-        const input = document.querySelector('[data-audit-search]');
-        if (input) {
-          input.focus();
-          input.setSelectionRange(input.value.length, input.value.length);
-        }
-      });
-    }
-    if (event.target.matches('[data-audit-from]')) {
-      auditDateFrom = event.target.value;
-      auditVisibleCount = 25;
-      queueRender();
-    }
-    if (event.target.matches('[data-audit-to]')) {
-      auditDateTo = event.target.value;
-      auditVisibleCount = 25;
-      queueRender();
-    }
   });
   document.addEventListener('keydown', event => {
     const performancePoint = event.target.closest?.('[data-performance-point]');
@@ -1293,14 +1121,15 @@ function bindEvents() {
     }
     if (event.key === 'Escape') {
       closeMemberMenus();
+      closeAdminUserMenus();
       closePerformancePointDetails();
     }
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) updateVisibleSessionTimers();
   });
-  window.addEventListener('resize', closeMemberMenus);
-  window.addEventListener('scroll', closeMemberMenus, true);
+  window.addEventListener('resize', () => { closeMemberMenus(); closeAdminUserMenus(); });
+  window.addEventListener('scroll', () => { closeMemberMenus(); closeAdminUserMenus(); }, true);
 }
 
 async function handleSubmit(event) {
@@ -1443,46 +1272,6 @@ async function handleSubmit(event) {
       return;
     }
 
-    if (form.id === 'review-report-form') {
-      if (!user.is_admin) throw new Error('Admin only.');
-      const report = getState().reports.find(item => item.id === String(data.reportId || ''));
-      if (!report) throw new Error('Report not found.');
-      const status = String(data.status || '');
-      if (!['reviewing', 'resolved', 'dismissed'].includes(status)) throw new Error('Invalid report status.');
-      const note = String(data.note || '').trim();
-      if (status !== 'reviewing' && !note) throw new Error('A resolution note is required.');
-      await reviewSessionReport(report.id, status, note || 'Under review');
-      await refreshRemoteActivity({ quiet: true });
-      closeActiveModal();
-      showToast('Report status updated.');
-      return;
-    }
-
-    if (form.id === 'admin-account-status-form') {
-      if (!user.is_admin) throw new Error('Admin only.');
-      const targetUserId = String(data.userId || '');
-      const status = String(data.status || '');
-      const reason = String(data.reason || '').trim();
-      if (!['active', 'suspended'].includes(status)) throw new Error('Invalid account status.');
-      if (targetUserId === user.id) throw new Error('You cannot change the account you are using.');
-      const targetUser = userById(targetUserId);
-      if (!targetUser) throw new Error('Account not found.');
-      if (status === 'suspended') {
-        if (!reason) throw new Error('A suspension reason is required.');
-        const openHosted = getState().sessions.filter(session =>
-          session.host_user_id === targetUserId && ['lobby', 'active'].includes(session.status)
-        );
-        if (openHosted.length) {
-          throw new Error(`Transfer or close this user’s open table${openHosted.length === 1 ? '' : 's'} first: ${openHosted.map(session => session.name).join(', ')}.`);
-        }
-      }
-      await runAdminAccountAction('set_status', { userId: targetUserId, status, reason });
-      await refreshRemoteProfiles({ routeAfterApproval: false });
-      closeActiveModal();
-      showToast(status === 'suspended' ? 'Account suspended.' : 'Account restored.');
-      return;
-    }
-
     if (form.id === 'delete-history-table-form') {
       if (!user.is_admin) throw new Error('Admin only.');
       const tableId = String(data.tableId || '');
@@ -1508,7 +1297,7 @@ async function handleSubmit(event) {
       clearRealtimeRegistrationQueue();
       sessionStorage.removeItem(ADMIN_PENDING_ROUTE_KEY);
       resetNotificationBaseline();
-      await runAdminAccountAction('hard_reset');
+      await runAdminAccountAction('hard_reset', { confirmation: 'RESET POKERAT' });
       await logoutAccount().catch(() => {});
       unsubscribeFromProfiles();
       unsubscribeFromPokeratActivity();
@@ -1569,13 +1358,6 @@ async function handleSubmit(event) {
       await refreshRemoteActivity({ quiet: true });
       closeActiveModal();
       showToast('Cash-out saved.');
-    } else if (form.id === 'report-session-form') {
-      const session = currentRouteSession(['lobby', 'active', 'closed', 'cancelled']);
-      requireMembership(session, user.id);
-      await submitSessionReport(session.id, String(data.reason || 'other'), String(data.details || ''));
-      await refreshRemoteActivity({ quiet: true });
-      closeActiveModal();
-      showToast('Report sent.');
     } else if (form.id === 'close-session-form') {
       const session = currentRouteSession(['active']);
       requireHost(session, user.id);
@@ -1772,7 +1554,6 @@ async function handleAction(event) {
       const hasTableHistory = getState().sessions.some(session => session.host_user_id === targetUserId) ||
         getState().members.some(member => member.user_id === targetUserId) ||
         getState().transactions.some(transaction => transaction.player_id === targetUserId) ||
-        getState().reports.some(report => report.reporter_id === targetUserId) ||
         (getState().sessionResults || []).some(result => result.user_id === targetUserId);
       if (hasTableHistory) throw new Error('This user has table history. Suspend the account instead so old results stay correct.');
       const accepted = await confirmDialog({
@@ -1786,16 +1567,6 @@ async function handleAction(event) {
       await refreshRemoteProfiles({ routeAfterApproval: false });
       await refreshRemoteActivity({ quiet: true });
       showToast('Account deleted.');
-    } else if (target.dataset.reviewReport) {
-      if (!user.is_admin) throw new Error('Admin only.');
-      const report = getState().reports.find(item => item.id === target.dataset.reviewReport);
-      if (!report) throw new Error('Report not found.');
-      openModal('review-report', {
-        reportId: report.id,
-        status: target.dataset.reportStatus,
-        sessionName: report.session_name,
-        reporterName: report.reporter_name
-      });
     } else if (target.dataset.adminStatus) {
       if (!user.is_admin) throw new Error('Admin only.');
       const targetUserId = target.dataset.userId;
@@ -2033,6 +1804,31 @@ function closeMemberMenus() {
   document.querySelectorAll('[data-member-menu-trigger][aria-expanded="true"]').forEach(trigger => {
     trigger.setAttribute('aria-expanded', 'false');
   });
+}
+
+
+function toggleAdminUserMenu(trigger) {
+  const menuId = trigger.getAttribute('aria-controls');
+  const menu = menuId ? document.getElementById(menuId) : null;
+  if (!menu) return;
+  const willOpen = menu.hidden;
+  closeAdminUserMenus();
+  if (!willOpen) return;
+  menu.hidden = false;
+  trigger.setAttribute('aria-expanded', 'true');
+  menu.dataset.adminUserMenu = 'open';
+  positionMemberMenu(trigger, menu);
+  menu.querySelector('button, a')?.focus({ preventScroll: true });
+}
+
+function closeAdminUserMenus() {
+  document.querySelectorAll('[data-admin-user-menu]').forEach(menu => {
+    menu.hidden = true;
+    menu.removeAttribute('data-admin-user-menu');
+    menu.style.left = '';
+    menu.style.top = '';
+  });
+  document.querySelectorAll('[data-admin-user-menu-trigger][aria-expanded="true"]').forEach(trigger => trigger.setAttribute('aria-expanded', 'false'));
 }
 
 bootstrap();

@@ -74,6 +74,10 @@ test('player performance builds a closed-table win and loss trend', async () => 
   assert.equal(performance.even, 1);
   assert.equal(performance.winRate, 33);
   assert.equal(performance.net, 100);
+  assert.equal(performance.bestResult, 300);
+  assert.equal(performance.biggestLoss, -200);
+  assert.deepEqual(performance.currentStreak, { outcome: 'even', count: 1 });
+  assert.equal(performance.longestWinStreak, 1);
   assert.deepEqual(performance.points.map(point => point.cumulativeNet), [300, 100, 100]);
   assert.deepEqual(performance.points.map(point => point.outcome), ['win', 'loss', 'even']);
 });
@@ -106,6 +110,40 @@ test('admin can permanently delete only finished tables through a protected RPC'
   assert.match(sql, /admin_delete_poker_table/);
   assert.match(sql, /table_row\.status not in \('closed', 'cancelled'\)/);
   assert.match(sql, /expected_confirmation := 'DELETE ' \|\| table_row\.session_code/);
-  assert.match(sql, /'table_deleted'/);
   assert.match(sql, /grant execute on function public\.admin_delete_poker_table\(uuid, text\) to authenticated/);
+  assert.match(sql, /truncate table[\s\S]*public\.poker_tables/);
+  assert.match(sql, /drop table if exists public\.session_reports cascade/);
+  assert.match(sql, /drop table if exists public\.audit_logs cascade/);
+  assert.doesNotMatch(sql, /'reports'\s*,\s*coalesce|'auditLogs'\s*,\s*coalesce/);
+});
+
+test('admin edge function repairs clear activity and hard reset', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const edge = await readFile(new URL('../supabase/functions/admin-account/index.ts', import.meta.url), 'utf8');
+  assert.match(edge, /action === 'clear_activity'/);
+  assert.match(edge, /admin\.rpc\('admin_clear_activity'\)/);
+  assert.match(edge, /confirmation !== 'RESET POKERAT'/);
+  assert.match(edge, /admin\.auth\.admin\.deleteUser/);
+});
+
+test('realtime money requests reopen the host approval popup and the themed notification icon renders', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const { appShell } = await import('../src/components/templates.js');
+  const shell = appShell({
+    profile: { id: 'host', display_name: 'Host Player', account_status: 'active' },
+    isAdmin: false,
+    route: '#/home',
+    content: '',
+    notificationCount: 2
+  });
+
+  assert.match(shell, /system-notification-icon/);
+  assert.doesNotMatch(shell, /🔔/);
+
+  const main = await readFile(new URL('../src/main.js', import.meta.url), 'utf8');
+  const css = await readFile(new URL('../src/styles/main.css', import.meta.url), 'utf8');
+  assert.match(main, /table === 'money_requests' && payload\?\.eventType === 'INSERT'/);
+  assert.match(main, /syncHostMoneyApprovalQueue\(currentUser\(\)\)/);
+  assert.match(css, /TEXT-SAFETY \+ THEMED NOTIFICATION ICON/);
+  assert.match(css, /overflow-wrap: anywhere/);
 });

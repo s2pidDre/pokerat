@@ -144,33 +144,6 @@ create table if not exists public.session_results (
 create index if not exists session_results_user_idx on public.session_results(user_id, created_at desc);
 create index if not exists session_results_net_idx on public.session_results(net_cents desc);
 
-create table if not exists public.session_reports (
-  id uuid primary key default gen_random_uuid(),
-  table_id uuid not null references public.poker_tables(id) on delete cascade,
-  reporter_id uuid not null references public.profiles(id) on delete restrict,
-  reason text not null default 'other',
-  details text not null,
-  status text not null default 'open' check (status in ('open', 'reviewing', 'resolved', 'dismissed')),
-  resolution_note text not null default '',
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create index if not exists session_reports_status_idx on public.session_reports(status, created_at desc);
-
-create table if not exists public.audit_logs (
-  id uuid primary key default gen_random_uuid(),
-  action text not null,
-  actor_id uuid references public.profiles(id) on delete set null,
-  table_id uuid references public.poker_tables(id) on delete cascade,
-  target_type text not null default '',
-  target_id uuid,
-  details jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists audit_logs_table_idx on public.audit_logs(table_id, created_at desc);
-create index if not exists audit_logs_actor_idx on public.audit_logs(actor_id, created_at desc);
 
 -- Shared updated_at trigger.
 drop trigger if exists poker_tables_set_updated_at on public.poker_tables;
@@ -178,9 +151,6 @@ create trigger poker_tables_set_updated_at before update on public.poker_tables
 for each row execute function public.set_updated_at();
 drop trigger if exists money_requests_set_updated_at on public.money_requests;
 create trigger money_requests_set_updated_at before update on public.money_requests
-for each row execute function public.set_updated_at();
-drop trigger if exists session_reports_set_updated_at on public.session_reports;
-create trigger session_reports_set_updated_at before update on public.session_reports
 for each row execute function public.set_updated_at();
 
 create or replace function public.is_active_user(check_user uuid default auth.uid())
@@ -289,27 +259,6 @@ begin
 end;
 $$;
 
-create or replace function public.add_pokerat_audit(
-  p_action text,
-  p_table_id uuid default null,
-  p_actor_id uuid default auth.uid(),
-  p_target_type text default '',
-  p_target_id uuid default null,
-  p_details jsonb default '{}'::jsonb
-)
-returns uuid
-language plpgsql
-security definer
-set search_path = ''
-as $$
-declare result uuid;
-begin
-  insert into public.audit_logs(action, actor_id, table_id, target_type, target_id, details)
-  values (p_action, p_actor_id, p_table_id, coalesce(p_target_type, ''), p_target_id, coalesce(p_details, '{}'::jsonb))
-  returning id into result;
-  return result;
-end;
-$$;
 
 create or replace function public.generate_pokerat_code()
 returns text
@@ -362,9 +311,6 @@ begin
   insert into public.table_members(table_id, user_id, member_role)
   values (table_row.id, auth.uid(), 'host');
 
-  perform public.add_pokerat_audit('session_created', table_row.id, auth.uid(), 'session', table_row.id,
-    jsonb_build_object('session_code', table_row.session_code));
-
   return jsonb_build_object('table_id', table_row.id, 'session_code', table_row.session_code);
 end;
 $$;
@@ -401,8 +347,6 @@ begin
       coalesce(actor_name, 'A player') || ' joined ' || table_row.name || '.',
       'approved', table_row.id
     );
-    perform public.add_pokerat_audit('player_joined', table_row.id, auth.uid(), 'user', auth.uid(),
-      jsonb_build_object('user_id', auth.uid()));
   end if;
 
   return jsonb_build_object('table_id', table_row.id, 'already_member', member_exists);
@@ -427,7 +371,6 @@ begin
   insert into public.notifications(user_id, title, message, type, table_id, action_hash)
   select user_id, 'Table started', table_row.name || ' is now playing.', 'approved', p_table_id, '#/session/' || p_table_id::text
   from public.table_members where table_id = p_table_id and user_id <> auth.uid();
-  perform public.add_pokerat_audit('session_started', p_table_id, auth.uid(), 'session', p_table_id);
 end;
 $$;
 
@@ -460,9 +403,6 @@ begin
   insert into public.notifications(user_id, title, message, type, table_id, action_hash)
   select user_id, 'Table cancelled', table_row.name || ' was cancelled.', 'rejected', p_table_id, '#/session/' || p_table_id::text
   from public.table_members where table_id = p_table_id and user_id <> auth.uid();
-
-  perform public.add_pokerat_audit('session_cancelled', p_table_id, auth.uid(), 'session', p_table_id,
-    jsonb_build_object('duration_seconds', seconds));
 end;
 $$;
 
@@ -508,11 +448,6 @@ begin
     'request', p_table_id, request_row.id,
     case when p_request_type = 'cash_in' then 'buyin' else 'cashout' end,
     'host_money_queue'
-  );
-  perform public.add_pokerat_audit(
-    case when p_request_type = 'cash_in' then 'buy_in_requested' else 'cash_out_requested' end,
-    p_table_id, auth.uid(), 'request', request_row.id,
-    jsonb_build_object('player_id', auth.uid(), 'amount_cents', p_amount_cents)
   );
   return request_row.id;
 exception
@@ -576,12 +511,6 @@ begin
       '₱' || to_char(request_row.requested_amount_cents::numeric / 100, 'FM9999999990.00') || ' was approved for ' || table_row.name || '.',
       'approved', request_row.table_id
     );
-    perform public.add_pokerat_audit(
-      case when request_row.request_type = 'cash_in' then 'buyin_approved' else 'cashout_approved' end,
-      request_row.table_id, auth.uid(), 'transaction', transaction_id,
-      jsonb_build_object('request_id', request_row.id, 'player_id', request_row.requester_id,
-        'requested_amount_cents', request_row.requested_amount_cents, 'approved_amount_cents', request_row.requested_amount_cents)
-    );
   else
     update public.money_requests
     set status = 'rejected', rejection_reason = coalesce(nullif(trim(p_reason), ''), 'Rejected by host'),
@@ -593,11 +522,6 @@ begin
       case when request_row.request_type = 'cash_in' then 'Cash-in rejected' else 'Cash-out rejected' end,
       table_row.name || ': ' || coalesce(nullif(trim(p_reason), ''), 'Rejected by host'),
       'rejected', request_row.table_id
-    );
-    perform public.add_pokerat_audit(
-      case when request_row.request_type = 'cash_in' then 'buyin_rejected' else 'cashout_rejected' end,
-      request_row.table_id, auth.uid(), 'request', request_row.id,
-      jsonb_build_object('player_id', request_row.requester_id, 'reason', coalesce(nullif(trim(p_reason), ''), 'Rejected by host'))
     );
   end if;
 
@@ -623,7 +547,6 @@ begin
   update public.money_requests
   set status = 'cancelled', cancellation_reason = 'Cancelled by requester', cancelled_at = now()
   where id = request_row.id;
-  perform public.add_pokerat_audit('money_request_cancelled', request_row.table_id, auth.uid(), 'request', request_row.id);
 end;
 $$;
 
@@ -653,11 +576,6 @@ begin
   insert into public.transactions(table_id, player_id, transaction_type, amount_cents, metadata)
   values (p_table_id, auth.uid(), p_transaction_type, p_amount_cents, jsonb_build_object('confirmation', 'host_self_recorded'))
   returning id into transaction_id;
-  perform public.add_pokerat_audit(
-    case when p_transaction_type = 'buy_in' then 'host_cash_in_confirmed' else 'host_cash_out_confirmed' end,
-    p_table_id, auth.uid(), 'transaction', transaction_id,
-    jsonb_build_object('player_id', auth.uid(), 'amount_cents', p_amount_cents)
-  );
   funds := public.table_funds_cents(p_table_id);
   return jsonb_build_object('transaction_id', transaction_id, 'table_funds_cents', funds);
 end;
@@ -730,10 +648,6 @@ begin
       p_table_id, null, '', 'final_result', result_payload
     );
   end loop;
-
-  perform public.add_pokerat_audit('session_closed', p_table_id, auth.uid(), 'session', p_table_id,
-    jsonb_build_object('expected_funds_cents', funds, 'counted_funds_cents', funds,
-      'discrepancy_cents', 0, 'duration_seconds', seconds));
   return jsonb_build_object('table_id', p_table_id, 'duration_seconds', seconds, 'table_funds_cents', funds);
 end;
 $$;
@@ -757,8 +671,6 @@ begin
   where table_id = p_table_id and requester_id = p_user_id and status = 'pending';
   delete from public.table_members where table_id = p_table_id and user_id = p_user_id;
   perform public.add_pokerat_notification(p_user_id, 'Removed from table', 'You were removed from ' || table_row.name || '. Pending requests were cancelled.', 'rejected', null);
-  perform public.add_pokerat_audit('player_removed', p_table_id, auth.uid(), 'user', p_user_id,
-    jsonb_build_object('user_id', p_user_id));
 end;
 $$;
 
@@ -783,8 +695,6 @@ begin
   update public.poker_tables set host_user_id = p_next_host_id where id = p_table_id;
   select display_name into next_name from public.profiles where id = p_next_host_id;
   perform public.add_pokerat_notification(p_next_host_id, 'You are now the host', 'You now control ' || table_row.name || '.', 'approved', p_table_id);
-  perform public.add_pokerat_audit('host_transferred', p_table_id, auth.uid(), 'user', p_next_host_id,
-    jsonb_build_object('previous_host_id', previous_host, 'new_host_id', p_next_host_id));
 end;
 $$;
 
@@ -823,57 +733,10 @@ begin
       jsonb_build_object('correction_group_id', reversal_id, 'replaces_transaction_id', tx.id))
     returning id into replacement_id;
   end if;
-  perform public.add_pokerat_audit('transaction_corrected', tx.table_id, auth.uid(), 'transaction', tx.id,
-    jsonb_build_object('original_amount_cents', tx.amount_cents, 'corrected_amount_cents', p_corrected_amount_cents,
-      'transaction_type', tx.transaction_type, 'reason', trim(p_reason), 'reversal_id', reversal_id, 'replacement_id', replacement_id));
   return jsonb_build_object('reversal_id', reversal_id, 'replacement_id', replacement_id, 'table_funds_cents', public.table_funds_cents(tx.table_id));
 end;
 $$;
 
-create or replace function public.submit_session_report(p_table_id uuid, p_reason text, p_details text)
-returns uuid
-language plpgsql
-security definer
-set search_path = ''
-as $$
-declare table_row public.poker_tables; report_id uuid; reporter_name text; admin_row record;
-begin
-  perform public.require_active_user();
-  select * into table_row from public.poker_tables where id = p_table_id;
-  if table_row.id is null or not public.is_table_member(p_table_id, auth.uid()) then raise exception 'Table not found.'; end if;
-  if char_length(trim(coalesce(p_details, ''))) < 10 then raise exception 'Add at least 10 characters of detail.'; end if;
-  insert into public.session_reports(table_id, reporter_id, reason, details)
-  values (p_table_id, auth.uid(), coalesce(nullif(trim(p_reason), ''), 'other'), trim(p_details)) returning id into report_id;
-  select display_name into reporter_name from public.profiles where id = auth.uid();
-  for admin_row in select id from public.profiles where is_admin and account_status = 'active' loop
-    perform public.add_pokerat_notification(admin_row.id, 'New session report', coalesce(reporter_name, 'A user') || ' reported ' || table_row.name || '.', 'request', p_table_id);
-  end loop;
-  perform public.add_pokerat_audit('session_reported', p_table_id, auth.uid(), 'report', report_id,
-    jsonb_build_object('reason', p_reason, 'session_status', table_row.status));
-  return report_id;
-end;
-$$;
-
-create or replace function public.review_session_report(p_report_id uuid, p_status text, p_note text default '')
-returns void
-language plpgsql
-security definer
-set search_path = ''
-as $$
-declare report_row public.session_reports; table_name text;
-begin
-  perform public.require_active_user();
-  if not public.is_active_admin() then raise exception 'Admin only.'; end if;
-  if p_status not in ('reviewing', 'resolved', 'dismissed') then raise exception 'Invalid report status.'; end if;
-  select * into report_row from public.session_reports where id = p_report_id for update;
-  if report_row.id is null then raise exception 'Report not found.'; end if;
-  update public.session_reports set status = p_status, resolution_note = coalesce(nullif(trim(p_note), ''), 'Under review') where id = p_report_id;
-  select name into table_name from public.poker_tables where id = report_row.table_id;
-  perform public.add_pokerat_notification(report_row.reporter_id, 'Report updated', coalesce(table_name, 'Table') || ': ' || coalesce(nullif(trim(p_note), ''), 'Under review'), 'info', report_row.table_id);
-  perform public.add_pokerat_audit('report_' || p_status, report_row.table_id, auth.uid(), 'report', report_row.id,
-    jsonb_build_object('status', p_status, 'resolution_note', coalesce(nullif(trim(p_note), ''), 'Under review')));
-end;
-$$;
 
 create or replace function public.mark_pokerat_notifications_read()
 returns void
@@ -923,25 +786,6 @@ begin
   if upper(trim(coalesce(p_confirmation, ''))) <> expected_confirmation then
     raise exception 'Type % exactly to continue.', expected_confirmation;
   end if;
-
-  -- Keep one standalone deletion record after the table and its related rows cascade away.
-  insert into public.audit_logs(action, actor_id, table_id, target_type, target_id, details)
-  values (
-    'table_deleted',
-    auth.uid(),
-    null,
-    'table',
-    table_row.id,
-    jsonb_build_object(
-      'table_name', table_row.name,
-      'table_code', table_row.session_code,
-      'table_status', table_row.status,
-      'host_user_id', table_row.host_user_id,
-      'closed_at', table_row.closed_at,
-      'cancelled_at', table_row.cancelled_at
-    )
-  );
-
   delete from public.poker_tables where id = table_row.id;
 end;
 $$;
@@ -954,14 +798,13 @@ set search_path = ''
 as $$
 begin
   if auth.uid() is not null and not public.is_active_admin() then raise exception 'Admin only.'; end if;
-  delete from public.audit_logs;
-  delete from public.session_reports;
-  delete from public.notifications;
-  delete from public.session_results;
-  delete from public.transactions;
-  delete from public.money_requests;
-  delete from public.table_members;
-  delete from public.poker_tables;
+  truncate table
+    public.notifications,
+    public.session_results,
+    public.transactions,
+    public.money_requests,
+    public.table_members,
+    public.poker_tables;
 end;
 $$;
 
@@ -1003,15 +846,6 @@ begin
     where admin_access or r.requester_id = uid or exists (
       select 1 from visible_tables t where t.id = r.table_id and t.host_user_id = uid
     )
-  ),
-  visible_reports as (
-    select r.*, t.name as table_name, t.session_code
-    from public.session_reports r join public.poker_tables t on t.id = r.table_id
-    where admin_access or r.reporter_id = uid
-  ),
-  visible_audits as (
-    select a.* from public.audit_logs a
-    where admin_access or a.table_id in (select id from accessible_tables)
   ),
   profile_ids as (
     select uid as id
@@ -1093,22 +927,6 @@ begin
       ) order by n.created_at desc)
       from public.notifications n where n.user_id = uid
     ), '[]'::jsonb),
-    'reports', coalesce((
-      select jsonb_agg(jsonb_build_object(
-        'id', r.id, 'session_id', r.table_id, 'session_name', r.table_name,
-        'session_code', r.session_code, 'reporter_id', r.reporter_id,
-        'reporter_name', p.display_name, 'reason', r.reason, 'details', r.details,
-        'status', r.status, 'resolution_note', r.resolution_note, 'created_at', r.created_at
-      ) order by r.created_at desc)
-      from visible_reports r join public.profiles p on p.id = r.reporter_id
-    ), '[]'::jsonb),
-    'auditLogs', coalesce((
-      select jsonb_agg(jsonb_build_object(
-        'id', a.id, 'action', a.action, 'actor_id', a.actor_id,
-        'session_id', a.table_id, 'target_type', a.target_type,
-        'target_id', a.target_id, 'details', a.details, 'created_at', a.created_at
-      ) order by a.created_at desc) from visible_audits a
-    ), '[]'::jsonb),
     'sessionResults', coalesce((
       select jsonb_agg(jsonb_build_object(
         'id', sr.id, 'session_id', sr.table_id, 'user_id', sr.user_id,
@@ -1130,13 +948,11 @@ alter table public.money_requests enable row level security;
 alter table public.transactions enable row level security;
 alter table public.notifications enable row level security;
 alter table public.session_results enable row level security;
-alter table public.session_reports enable row level security;
-alter table public.audit_logs enable row level security;
 
 revoke all on public.poker_tables, public.table_members, public.money_requests, public.transactions,
-  public.notifications, public.session_results, public.session_reports, public.audit_logs from anon, authenticated;
+  public.notifications, public.session_results from anon, authenticated;
 grant select on public.poker_tables, public.table_members, public.money_requests, public.transactions,
-  public.notifications, public.session_results, public.session_reports, public.audit_logs to authenticated;
+  public.notifications, public.session_results to authenticated;
 
 drop policy if exists poker_tables_select_member on public.poker_tables;
 create policy poker_tables_select_member on public.poker_tables for select to authenticated
@@ -1162,13 +978,6 @@ drop policy if exists session_results_select_active on public.session_results;
 create policy session_results_select_active on public.session_results for select to authenticated
 using (public.is_active_user(auth.uid()));
 
-drop policy if exists session_reports_select_own_or_admin on public.session_reports;
-create policy session_reports_select_own_or_admin on public.session_reports for select to authenticated
-using (public.is_active_user(auth.uid()) and (reporter_id = auth.uid() or public.is_active_admin()));
-
-drop policy if exists audit_logs_select_member_or_admin on public.audit_logs;
-create policy audit_logs_select_member_or_admin on public.audit_logs for select to authenticated
-using (public.is_active_user(auth.uid()) and (public.is_active_admin() or (table_id is not null and public.is_table_member(table_id, auth.uid()))));
 
 -- Lock down helper functions and expose only the intended RPC surface.
 revoke all on function public.is_active_user(uuid) from public;
@@ -1177,7 +986,6 @@ revoke all on function public.is_table_host(uuid, uuid) from public;
 revoke all on function public.table_funds_cents(uuid) from public;
 revoke all on function public.require_active_user() from public;
 revoke all on function public.add_pokerat_notification(uuid, text, text, text, uuid, uuid, text, text, jsonb) from public;
-revoke all on function public.add_pokerat_audit(text, uuid, uuid, text, uuid, jsonb) from public;
 revoke all on function public.generate_pokerat_code() from public;
 revoke all on function public.create_poker_table(text) from public;
 revoke all on function public.join_poker_table(text) from public;
@@ -1191,8 +999,6 @@ revoke all on function public.close_poker_table(uuid) from public;
 revoke all on function public.remove_table_member(uuid, uuid) from public;
 revoke all on function public.transfer_table_host(uuid, uuid) from public;
 revoke all on function public.correct_poker_transaction(uuid, bigint, text) from public;
-revoke all on function public.submit_session_report(uuid, text, text) from public;
-revoke all on function public.review_session_report(uuid, text, text) from public;
 revoke all on function public.mark_pokerat_notifications_read() from public;
 revoke all on function public.mark_pokerat_notification_read(uuid) from public;
 revoke all on function public.admin_delete_poker_table(uuid, text) from public;
@@ -1215,8 +1021,6 @@ grant execute on function public.close_poker_table(uuid) to authenticated;
 grant execute on function public.remove_table_member(uuid, uuid) to authenticated;
 grant execute on function public.transfer_table_host(uuid, uuid) to authenticated;
 grant execute on function public.correct_poker_transaction(uuid, bigint, text) to authenticated;
-grant execute on function public.submit_session_report(uuid, text, text) to authenticated;
-grant execute on function public.review_session_report(uuid, text, text) to authenticated;
 grant execute on function public.mark_pokerat_notifications_read() to authenticated;
 grant execute on function public.mark_pokerat_notification_read(uuid) to authenticated;
 grant execute on function public.admin_delete_poker_table(uuid, text) to authenticated;
@@ -1229,7 +1033,7 @@ declare table_name text;
 begin
   foreach table_name in array array[
     'poker_tables', 'table_members', 'money_requests', 'transactions',
-    'notifications', 'session_results', 'session_reports', 'audit_logs'
+    'notifications', 'session_results'
   ] loop
     if not exists (
       select 1 from pg_publication_tables
@@ -1239,3 +1043,23 @@ begin
     end if;
   end loop;
 end $$;
+
+
+-- Remove the retired report and audit systems from existing installations.
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    if exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'session_reports') then
+      execute 'alter publication supabase_realtime drop table public.session_reports';
+    end if;
+    if exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'audit_logs') then
+      execute 'alter publication supabase_realtime drop table public.audit_logs';
+    end if;
+  end if;
+end $$;
+
+drop function if exists public.submit_session_report(uuid, text, text);
+drop function if exists public.review_session_report(uuid, text, text);
+drop function if exists public.add_pokerat_audit(text, uuid, uuid, text, uuid, jsonb);
+drop table if exists public.session_reports cascade;
+drop table if exists public.audit_logs cascade;

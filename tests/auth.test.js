@@ -38,8 +38,8 @@ test('account screens and administrator controls render', async () => {
   assert.doesNotMatch(accountAccessView({ mode: 'login' }), /Admin login/);
   assert.match(forcePasswordChangeView({ display_name: 'Mark', email: '' }), /forced-password-change-form/);
   const pending = { id: 'u-new', display_name: 'Mark', login_name: 'mark', email: 'mark@example.com', account_status: 'pending', is_admin: false, created_at: new Date().toISOString() };
-  assert.match(adminView([pending], [], [], 'u-admin'), /mark@example.com/);
-  assert.match(adminView([pending], [], [], 'u-admin'), /data-admin-registration-approve="u-new"/);
+  assert.match(adminView([pending], 'u-admin'), /mark@example.com/);
+  assert.match(adminView([pending], 'u-admin'), /data-admin-registration-approve="u-new"/);
   const profile = { ...pending, account_status: 'active', display_name_changed_at: null };
   const profileHtml = profileView(profile);
   assert.doesNotMatch(profileHtml, /name="email"/);
@@ -85,17 +85,21 @@ test('small UI cleanup and player performance views render', async () => {
   assert.match(playerHtml, /performance-point--win/);
   assert.match(playerHtml, /performance-point--loss/);
 
+  assert.match(playerHtml, /Best result/);
+  assert.match(playerHtml, /Longest win streak/);
   assert.match(modalTemplate('hard-reset'), /RESET POKERAT/);
   assert.match(modalTemplate('admin-account-status', { status: 'suspended', userId: 'x', userName: 'X' }), /admin-account-status-form/);
-  assert.match(modalTemplate('review-report', { status: 'resolved', reportId: 'r' }), /review-report-form/);
+  assert.equal(modalTemplate('review-report', { status: 'resolved', reportId: 'r' }), '');
 });
 
 test('admin actions no longer use browser prompts', async () => {
   const { readFile } = await import('node:fs/promises');
   const main = await readFile(new URL('../src/main.js', import.meta.url), 'utf8');
+  const templates = await readFile(new URL('../src/components/templates.js', import.meta.url), 'utf8');
   assert.doesNotMatch(main, /\bprompt\s*\(/);
-  assert.match(main, /review-report-form/);
-  assert.match(main, /admin-account-status-form/);
+  assert.doesNotMatch(main, /review-report-form|report-session-form|auditLogView/);
+  assert.match(templates, /admin-account-status-form/);
+  assert.match(main, /runAdminAccountAction\('clear_activity'\)/);
 });
 
 test('performance ranges, history filters and admin tools render', async () => {
@@ -137,44 +141,33 @@ test('performance ranges, history filters and admin tools render', async () => {
   const adminHtml = adminView([
     { ...player, account_status: 'active', email: 'one@example.com' },
     { id: 'p2', display_name: 'Suspended Player', login_name: 'p2', email: 'two@example.com', account_status: 'suspended', is_admin: false }
-  ], [], [
-    { id: 'r1', session_name: 'Open report', reporter_name: 'Player One', details: 'Details', status: 'open', created_at: '2026-07-01T10:00:00Z' },
-    { id: 'r2', session_name: 'Past report', reporter_name: 'Player One', details: 'Done', status: 'resolved', created_at: '2026-07-01T10:00:00Z' }
-  ], 'admin', { search: '', filter: 'all' });
+  ], 'p1', { search: '', filter: 'all' });
   assert.match(adminHtml, /data-admin-user-search/);
   assert.match(adminHtml, /data-admin-user-filter="suspended"/);
-  assert.match(adminHtml, /Past reports/);
+  assert.match(adminHtml, /data-admin-user-menu-trigger/);
+  assert.doesNotMatch(adminHtml, /Open reports|Past reports|Audit log/);
 
   const notificationHtml = notificationList([{ id: 'n1', title: 'Update', message: 'Done', created_at: new Date().toISOString(), read_at: null }]);
   assert.match(notificationHtml, /data-mark-notification-read="n1"/);
 });
 
-test('admin history deletion and compact audit views render', async () => {
-  const { adminView, auditLogView, historyView, modalTemplate } = await import('../src/components/templates.js');
+test('admin history deletion and simplified user management render', async () => {
+  const { adminView, historyView, loadingSkeletonView, modalTemplate } = await import('../src/components/templates.js');
   const admin = { id: 'admin', display_name: 'Admin User', login_name: 'admin', email: 'admin@example.com', account_status: 'active', is_admin: true };
   const table = { id: 's1', name: 'Finished Table', status: 'closed', session_code: 'PKR-ABCD', host_user_id: 'admin', host: admin, session_members: [], duration_seconds: 900, created_at: '2026-07-01T10:00:00Z' };
 
   const adminHistory = historyView({ sessions: [table], profileId: 'admin', results: [], filter: 'all', isAdmin: true });
+  assert.match(adminHistory, /<details class="history-card system-window">/);
   assert.match(adminHistory, /data-delete-history-table="s1"/);
   const playerHistory = historyView({ sessions: [table], profileId: 'player', results: [], filter: 'all', isAdmin: false });
   assert.doesNotMatch(playerHistory, /data-delete-history-table/);
 
-  const adminHtml = adminView([admin], [], [], 'admin');
+  const adminHtml = adminView([admin], 'admin', { search: '', filter: 'all' });
   assert.match(adminHtml, /section-heading__badge--text">Admin only/);
-  assert.match(adminHtml, /View full audit log/);
-
-  const logs = Array.from({ length: 30 }, (_, index) => ({
-    id: `a${index}`,
-    action: 'session_closed',
-    actor: admin,
-    details: {},
-    created_at: `2026-07-${String((index % 28) + 1).padStart(2, '0')}T10:00:00Z`
-  }));
-  const auditHtml = auditLogView({ logs, totalCount: 30, controls: { category: 'all', range: 'all', visibleCount: 25 } });
-  assert.match(auditHtml, /data-audit-search/);
-  assert.match(auditHtml, /data-audit-category="money"/);
-  assert.match(auditHtml, /data-audit-load-more/);
-  assert.match(auditHtml, /Export CSV/);
+  assert.match(adminHtml, /admin-summary-grid/);
+  assert.match(adminHtml, /data-admin-user-menu-trigger/);
+  assert.doesNotMatch(adminHtml, /audit|report/i);
+  assert.match(loadingSkeletonView(), /loading-shell/);
 
   const deleteModal = modalTemplate('delete-history-table', { tableId: 's1', tableName: 'Finished Table', tableCode: 'PKR-ABCD' });
   assert.match(deleteModal, /delete-history-table-form/);
@@ -191,4 +184,43 @@ test('realtime registration dialog supports review later', async () => {
   assert.match(accountService, /payload => onChange\(payload\)/);
   assert.match(main, /payload\?\.eventType === 'INSERT'/);
   assert.match(main, /routeAdminToPendingRequestsOnce/);
+});
+
+test('mobile auth and notification layouts use compact non-overlapping structures', async () => {
+  const { accountAccessView, modalTemplate } = await import('../src/components/templates.js');
+  const { readFile } = await import('node:fs/promises');
+  const login = accountAccessView({ mode: 'login' });
+  const register = accountAccessView({ mode: 'register' });
+  const notifications = modalTemplate('notifications', {
+    notifications: [{ id: 'n1', title: 'Table finished', message: 'You finished even.', created_at: new Date().toISOString(), read_at: null, delivery: 'final_result' }]
+  });
+
+  assert.match(login, /access-screen--login/);
+  assert.match(login, /Log in to continue\./);
+  assert.doesNotMatch(login, /Do not use this on a shared device/);
+  assert.match(register, /access-screen--register/);
+  assert.match(register, /Admin approval is required\./);
+  assert.match(notifications, /modal__card--notifications/);
+
+  const css = await readFile(new URL('../src/styles/main.css', import.meta.url), 'utf8');
+  assert.match(css, /RESPONSIVE STABILITY \+ MOBILE LAYOUT/);
+  assert.match(css, /grid-template-columns: 36px minmax\(0, 1fr\)/);
+  assert.match(css, /height: 100dvh/);
+  assert.match(css, /min-height: calc\(100dvh - 84px\)/);
+  assert.match(css, /leaderboard-player strong,[\s\S]*white-space: normal/);
+  assert.match(css, /access-screen--login \.access-card::before/);
+});
+
+test('installed app icons are opaque maskable PNGs', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const manifest = JSON.parse(await readFile(new URL('../manifest.webmanifest', import.meta.url), 'utf8'));
+  const pngIcons = manifest.icons.filter(icon => icon.type === 'image/png');
+  assert.equal(pngIcons.length, 2);
+  assert.ok(pngIcons.every(icon => icon.purpose.includes('maskable')));
+
+  for (const file of ['icon-192.png', 'icon-512.png', 'apple-touch-icon.png']) {
+    const bytes = await readFile(new URL(`../icons/${file}`, import.meta.url));
+    assert.equal(bytes.subarray(1, 4).toString('ascii'), 'PNG');
+    assert.equal(bytes[25], 2, `${file} should use opaque RGB color type`);
+  }
 });

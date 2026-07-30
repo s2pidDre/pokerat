@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'pokerat-app-v1';
 const LEGACY_STORAGE_KEY = 'pokerat-local-prototype-v1';
-const SCHEMA_VERSION = 16;
+const SCHEMA_VERSION = 17;
 
 const LEGACY_SEED_USER_IDS = new Set(['u-host', 'u-player', 'u-carlo', 'u-dana', 'u-admin']);
 const LEGACY_SEED_SESSION_IDS = new Set(['s-friday', 's-weekend', 's-sunday', 's-open', 's-closed']);
@@ -29,8 +29,6 @@ export function createEmptyData() {
     transactions: [],
     requests: { join: [], buyin: [], cashout: [] },
     notifications: [],
-    reports: [],
-    auditLogs: [],
     sessionResults: []
   };
 }
@@ -156,9 +154,7 @@ function stripLegacySeedData(raw) {
       buyin: arrayOrEmpty(requestSource.buyin).filter(request => !LEGACY_SEED_USER_IDS.has(request?.requester_id) && !legacySessionIds.has(request?.session_id)),
       cashout: arrayOrEmpty(requestSource.cashout).filter(request => !LEGACY_SEED_USER_IDS.has(request?.requester_id) && !legacySessionIds.has(request?.session_id))
     },
-    notifications: arrayOrEmpty(raw.notifications).filter(notification => !LEGACY_SEED_USER_IDS.has(notification?.user_id) && !legacySessionIds.has(notification?.session_id)),
-    reports: arrayOrEmpty(raw.reports).filter(report => !LEGACY_SEED_USER_IDS.has(report?.reporter_id) && !legacySessionIds.has(report?.session_id)),
-    auditLogs: arrayOrEmpty(raw.auditLogs).filter(log => !LEGACY_SEED_USER_IDS.has(log?.actor_id) && !legacySessionIds.has(log?.session_id))
+    notifications: arrayOrEmpty(raw.notifications).filter(notification => !LEGACY_SEED_USER_IDS.has(notification?.user_id) && !legacySessionIds.has(notification?.session_id))
   };
 }
 
@@ -235,35 +231,6 @@ function normalizeData(raw) {
       read_at: stringOrEmpty(notification.read_at) || null
     }));
 
-  const reports = arrayOrEmpty(cleaned.reports)
-    .filter(report => report && stringOrEmpty(report.id) && sessionIds.has(report.session_id))
-    .map(report => ({
-      id: report.id,
-      session_id: report.session_id,
-      session_name: stringOrEmpty(report.session_name),
-      session_code: stringOrEmpty(report.session_code),
-      reporter_id: stringOrEmpty(report.reporter_id),
-      reporter_name: stringOrEmpty(report.reporter_name),
-      reason: stringOrEmpty(report.reason) || 'other',
-      details: stringOrEmpty(report.details),
-      status: ['open', 'reviewing', 'resolved', 'dismissed'].includes(report.status) ? report.status : 'open',
-      resolution_note: stringOrEmpty(report.resolution_note),
-      created_at: stringOrEmpty(report.created_at) || new Date().toISOString()
-    }));
-
-  const auditLogs = arrayOrEmpty(cleaned.auditLogs)
-    .filter(log => log && stringOrEmpty(log.id))
-    .map(log => ({
-      id: log.id,
-      action: stringOrEmpty(log.action) || 'unknown_action',
-      actor_id: stringOrEmpty(log.actor_id) || null,
-      session_id: stringOrEmpty(log.session_id) || null,
-      target_type: stringOrEmpty(log.target_type) || '',
-      target_id: stringOrEmpty(log.target_id) || '',
-      details: log.details && typeof log.details === 'object' ? log.details : {},
-      created_at: stringOrEmpty(log.created_at) || new Date().toISOString()
-    }));
-
   const sessionResults = arrayOrEmpty(cleaned.sessionResults)
     .filter(result => result && stringOrEmpty(result.id) && stringOrEmpty(result.session_id) && userIds.has(result.user_id))
     .map(result => ({
@@ -287,8 +254,6 @@ function normalizeData(raw) {
     transactions,
     requests,
     notifications,
-    reports,
-    auditLogs,
     sessionResults
   };
 }
@@ -343,8 +308,6 @@ export function clearActivityData(existingData) {
     transactions: [],
     requests: { join: [], buyin: [], cashout: [] },
     notifications: [],
-    reports: [],
-    auditLogs: [],
     sessionResults: []
   };
 

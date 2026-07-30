@@ -33,8 +33,6 @@ export async function loadPokeratActivity() {
       cashout: Array.isArray(data?.requests?.cashout) ? data.requests.cashout : []
     },
     notifications: Array.isArray(data?.notifications) ? data.notifications : [],
-    reports: Array.isArray(data?.reports) ? data.reports : [],
-    auditLogs: Array.isArray(data?.auditLogs) ? data.auditLogs : [],
     sessionResults: Array.isArray(data?.sessionResults) ? data.sessionResults : []
   };
 }
@@ -104,32 +102,12 @@ export function correctPokerTransaction(transactionId, correctedAmount, reason) 
   });
 }
 
-export function submitSessionReport(tableId, reason, details) {
-  return rpc('submit_session_report', {
-    p_table_id: tableId,
-    p_reason: String(reason || 'other'),
-    p_details: String(details || '').trim()
-  });
-}
-
-export function reviewSessionReport(reportId, status, note = '') {
-  return rpc('review_session_report', {
-    p_report_id: reportId,
-    p_status: status,
-    p_note: String(note || '').trim()
-  });
-}
-
 export function markAllNotificationsRead() {
   return rpc('mark_pokerat_notifications_read');
 }
 
 export function markNotificationRead(notificationId) {
   return rpc('mark_pokerat_notification_read', { p_notification_id: notificationId });
-}
-
-export function clearRemoteActivity() {
-  return rpc('admin_clear_activity');
 }
 
 export function deletePokerTable(tableId, confirmation) {
@@ -147,9 +125,7 @@ export function subscribeToPokeratActivity(onChange, onStatus = () => {}) {
     'money_requests',
     'transactions',
     'notifications',
-    'session_results',
-    'session_reports',
-    'audit_logs'
+    'session_results'
   ];
 
   let channel = supabase.channel(`pokerat-activity-${crypto.randomUUID()}`);
